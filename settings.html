@@ -1,0 +1,279 @@
+<!DOCTYPE html>
+<html lang="ro">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Setări — Biblioteca pentru toți</title>
+  <meta name="description" content="Configurează Script URL, Secret, Device ID, email și telefon pentru aplicație." />
+  <style>
+    :root{
+      --bg:#0f172a;--fg:#e2e8f0;--muted:#94a3b8;--card:#111827;--border:#1f2937;
+      --accent:#22c55e;--accent2:#3b82f6;--danger:#ef4444;--warn:#f59e0b
+    }
+    *{box-sizing:border-box}
+    html,body{margin:0;height:100%;background:var(--bg);color:var(--fg);font-family:system-ui,-apple-system,Segoe UI,Roboto,Ubuntu,Cantarell,Noto Sans,Arial}
+    a{color:var(--accent2);text-decoration:none} a:hover{text-decoration:underline}
+    .container{max-width:900px;margin:0 auto;padding:24px}
+    header{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:18px}
+    .title{font-weight:600;letter-spacing:.2px}
+    .badge{display:inline-flex;align-items:center;gap:8px;border:1px solid var(--border);background:var(--card);padding:6px 10px;border-radius:999px;font-size:.85rem;color:var(--muted)}
+    .badge .dot{width:8px;height:8px;border-radius:999px;background:var(--warn)}
+    .badge.ok .dot{background:var(--accent)} .badge.err .dot{background:var(--danger)}
+    .card{border:1px solid var(--border);background:var(--card);border-radius:14px;padding:18px;margin-top:16px}
+    .card h2{margin:0 0 10px;font-size:1.05rem}
+    .grid{display:grid;grid-template-columns:1fr 1fr;gap:16px}
+    @media (max-width:800px){.grid{grid-template-columns:1fr}}
+    label{display:block;margin:8px 0 6px;color:var(--muted);font-size:.95rem}
+    input,button{width:100%;padding:10px 12px;border-radius:10px;border:1px solid var(--border);background:#0b1220;color:var(--fg);font-size:.95rem;outline:none}
+    input[type="url"],input[type="email"],input[type="tel"],input[type="text"],input[type="password"]{font-family:inherit}
+    .row{display:flex;gap:10px;align-items:center}
+    .row > .grow{flex:1}
+    .hint{font-size:.9rem;color:var(--muted);margin-top:6px}
+    .actions{display:flex;gap:10px;flex-wrap:wrap;margin-top:10px}
+    button{cursor:pointer;background:#0a0f1e}
+    button.primary{background:var(--accent2);border-color:var(--accent2);color:#fff}
+    button.ghost{background:transparent}
+    button.warn{background:#231a0a;border-color:#3b2a0b}
+    button.danger{background:#1f0a0a;border-color:#3a1111}
+    button:disabled{opacity:.6;cursor:not-allowed}
+    .msg{margin-top:12px;padding:10px 12px;border-radius:10px;background:#0b1220;border:1px solid var(--border);color:var(--muted)}
+    .msg.ok{color:#c8facc;border-color:#134e26;background:#07140d}
+    .msg.err{color:#fecaca;border-color:#4c1d1d;background:#140707}
+    .nav{display:flex;gap:10px;flex-wrap:wrap;margin-top:12px}
+    .pill{padding:8px 12px;border:1px solid var(--border);background:#0b1220;border-radius:999px}
+    .sr{position:absolute;left:-9999px}
+  </style>
+</head>
+<body>
+  <div class="container">
+    <header>
+      <div class="title">⚙️ Setări — Biblioteca pentru toți — <span id="uiVersion"></span></div>
+      <div class="badge" id="cfgBadge"><span class="dot"></span><span id="cfgText">Config nevalidat</span></div>
+    </header>
+
+    <section class="card">
+      <h2>Backend (Google Apps Script)</h2>
+      <label for="url">Script URL (Web App <em>/exec</em>)</label>
+      <input id="url" type="url" placeholder="https://script.google.com/macros/s/AKfycb.../exec" autocomplete="off" />
+      <div class="hint">Asigură-te că ai făcut Deploy → <b>Web app</b> și „Who has access” = <b>Anyone with the link</b>.</div>
+
+      <label for="secret">Secret (token)</label>
+      <div class="row">
+        <input id="secret" class="grow" type="password" placeholder="ex: 8d3b0b2e-… (din foaia Users.secretId)" autocomplete="new-password" />
+        <button id="toggleSecret" type="button" aria-label="Arată/ascunde secret">👁️</button>
+      </div>
+      <div class="hint">Acest secret e stocat local, în browser (localStorage). Păstrează-l în siguranță.</div>
+
+      <div class="grid">
+        <div>
+          <label for="deviceId">Device ID</label>
+          <div class="row">
+            <input id="deviceId" class="grow" type="text" placeholder="ex: UUID v4" />
+            <button id="genDevice" type="button">Generează</button>
+          </div>
+          <div class="hint">Util pentru logare/debug clienți. Poți folosi un UUID.</div>
+        </div>
+        <div>
+          <label for="email">Email (opțional)</label>
+          <input id="email" type="email" placeholder="ex: nume@exemplu.ro" />
+          <div class="hint">Poate fi folosit în notificări.</div>
+        </div>
+      </div>
+
+      <div class="grid">
+        <div>
+          <label for="phone">Telefon (opțional)</label>
+          <input id="phone" type="tel" placeholder="+40..." />
+        </div>
+        <div>
+          <label for="status">Status test backend</label>
+          <input id="status" type="text" disabled value="—" />
+        </div>
+      </div>
+
+      <div class="actions">
+        <button id="save" class="primary">Salvează</button>
+        <button id="test">Testează conexiunea (app.info)</button>
+        <button id="export" class="ghost">Export setări</button>
+        <button id="import" class="ghost">Import setări</button>
+        <button id="clear" class="danger">Șterge setările</button>
+        <a class="pill" href="index.html">⟵ Înapoi la Hub</a>
+      </div>
+      <input id="file" type="file" accept="application/json" class="sr" />
+
+      <div id="msg" class="msg" hidden></div>
+    </section>
+
+    <section class="card">
+      <h2>Notă de securitate</h2>
+      <div class="hint">Datele se salvează în <b>localStorage</b> pe acest browser. Dacă partajezi PC-ul, șterge setările după utilizare.</div>
+    </section>
+  </div>
+
+  <script>
+    const UI_VERSION = '0.1.0';
+    const LS_KEYS = {
+      url:'BPT_SCRIPT_URL',
+      secret:'BPT_SECRET',
+      deviceId:'BPT_DEVICE_ID',
+      email:'BPT_EMAIL',
+      phone:'BPT_PHONE',
+      activeLib:'BPT_ACTIVE_LIBRARY_ID'
+    };
+
+    const els = {
+      uiVersion: document.getElementById('uiVersion'),
+      cfgBadge: document.getElementById('cfgBadge'),
+      cfgText: document.getElementById('cfgText'),
+      url: document.getElementById('url'),
+      secret: document.getElementById('secret'),
+      toggleSecret: document.getElementById('toggleSecret'),
+      deviceId: document.getElementById('deviceId'),
+      genDevice: document.getElementById('genDevice'),
+      email: document.getElementById('email'),
+      phone: document.getElementById('phone'),
+      status: document.getElementById('status'),
+      save: document.getElementById('save'),
+      test: document.getElementById('test'),
+      exportBtn: document.getElementById('export'),
+      importBtn: document.getElementById('import'),
+      file: document.getElementById('file'),
+      clear: document.getElementById('clear'),
+      msg: document.getElementById('msg')
+    };
+
+    els.uiVersion.textContent = `UI v${UI_VERSION}`;
+
+    function showMsg(kind, text){
+      els.msg.hidden = false;
+      els.msg.classList.remove('ok','err');
+      if(kind) els.msg.classList.add(kind);
+      els.msg.textContent = text;
+    }
+    function clearMsg(){ els.msg.hidden = true; els.msg.textContent=''; els.msg.classList.remove('ok','err'); }
+    function setBadge(state, text){
+      els.cfgBadge.classList.remove('ok','err');
+      if(state==='ok') els.cfgBadge.classList.add('ok');
+      if(state==='err') els.cfgBadge.classList.add('err');
+      els.cfgText.textContent = text;
+    }
+    function uuidv4(){
+      const a = new Uint8Array(16);
+      crypto.getRandomValues(a);
+      a[6] = (a[6] & 0x0f) | 0x40;
+      a[8] = (a[8] & 0x3f) | 0x80;
+      const h = [...a].map(b=>b.toString(16).padStart(2,'0')).join('');
+      return `${h.slice(0,8)}-${h.slice(8,12)}-${h.slice(12,16)}-${h.slice(16,20)}-${h.slice(20)}`;
+    }
+    function load(){
+      els.url.value = localStorage.getItem(LS_KEYS.url) || '';
+      els.secret.value = localStorage.getItem(LS_KEYS.secret) || '';
+      els.deviceId.value = localStorage.getItem(LS_KEYS.deviceId) || '';
+      els.email.value = localStorage.getItem(LS_KEYS.email) || '';
+      els.phone.value = localStorage.getItem(LS_KEYS.phone) || '';
+      const ok = !!(els.url.value && els.secret.value);
+      setBadge(ok ? 'ok' : '', ok ? 'Config OK' : 'Config nevalidat');
+      els.test.disabled = !ok;
+      els.status.value = '—';
+    }
+    function save(){
+      clearMsg();
+      const url = els.url.value.trim();
+      const secret = els.secret.value.trim();
+      const deviceId = els.deviceId.value.trim();
+      const email = els.email.value.trim();
+      const phone = els.phone.value.trim();
+
+      if(!url){ showMsg('err','Te rog completează Script URL.'); return; }
+      if(!secret){ showMsg('err','Te rog completează Secret.'); return; }
+
+      localStorage.setItem(LS_KEYS.url, url);
+      localStorage.setItem(LS_KEYS.secret, secret);
+      localStorage.setItem(LS_KEYS.deviceId, deviceId);
+      localStorage.setItem(LS_KEYS.email, email);
+      localStorage.setItem(LS_KEYS.phone, phone);
+
+      setBadge('ok','Config salvat');
+      els.test.disabled = false;
+      showMsg('ok','Setările au fost salvate.');
+    }
+    async function test(){
+      clearMsg();
+      const url = localStorage.getItem(LS_KEYS.url)||'';
+      const secret = localStorage.getItem(LS_KEYS.secret)||'';
+      if(!url || !secret){ showMsg('err','Config incomplet. Salvează mai întâi.'); return; }
+      els.status.value = 'Se testează…';
+      try{
+        const res = await fetch(url,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({token:secret,op:'app.info',params:{}})});
+        const data = await res.json();
+        if(!data || data.ok!==true) throw new Error(data && data.error || 'Eroare necunoscută');
+        els.status.value = `OK — backend v${data.data.version} @ ${new Date().toLocaleString()}`;
+        setBadge('ok','Conectat');
+        showMsg('ok','Conexiune reușită cu backend-ul.');
+      }catch(err){
+        els.status.value = 'Eroare';
+        setBadge('err','Eroare backend');
+        showMsg('err',`Test eșuat: ${err.message}`);
+      }
+    }
+    function exportSettings(){
+      const obj = {
+        _kind:'BPT_SETTINGS',
+        exportedAt:new Date().toISOString(),
+        url: localStorage.getItem(LS_KEYS.url)||'',
+        secret: localStorage.getItem(LS_KEYS.secret)||'',
+        deviceId: localStorage.getItem(LS_KEYS.deviceId)||'',
+        email: localStorage.getItem(LS_KEYS.email)||'',
+        phone: localStorage.getItem(LS_KEYS.phone)||'',
+      };
+      const blob = new Blob([JSON.stringify(obj,null,2)],{type:'application/json'});
+      const a = document.createElement('a');
+      a.href = URL.createObjectURL(blob);
+      a.download = 'bpt_settings.json';
+      a.click();
+      URL.revokeObjectURL(a.href);
+    }
+    function importSettingsPrompt(){ els.file.click(); }
+    function importSettings(evt){
+      const f = evt.target.files[0];
+      if(!f) return;
+      const reader = new FileReader();
+      reader.onload = () => {
+        try{
+          const obj = JSON.parse(reader.result);
+          if(obj._kind!=='BPT_SETTINGS') throw new Error('Fișier invalid');
+          if(obj.url) localStorage.setItem(LS_KEYS.url, obj.url);
+          if(obj.secret) localStorage.setItem(LS_KEYS.secret, obj.secret);
+          if(obj.deviceId) localStorage.setItem(LS_KEYS.deviceId, obj.deviceId);
+          if(obj.email) localStorage.setItem(LS_KEYS.email, obj.email);
+          if(obj.phone) localStorage.setItem(LS_KEYS.phone, obj.phone);
+          load();
+          showMsg('ok','Setări importate. Nu uita să testezi conexiunea.');
+        }catch(e){ showMsg('err','Import eșuat: ' + e.message); }
+        finally { els.file.value=''; }
+      };
+      reader.readAsText(f);
+    }
+    function clearAll(){
+      if(!confirm('Sigur vrei să ștergi toate setările locale?')) return;
+      [LS_KEYS.url,LS_KEYS.secret,LS_KEYS.deviceId,LS_KEYS.email,LS_KEYS.phone,LS_KEYS.activeLib].forEach(k=>localStorage.removeItem(k));
+      load();
+      showMsg('ok','Setările au fost șterse.');
+    }
+
+    // UI wiring
+    els.toggleSecret.addEventListener('click', ()=>{
+      els.secret.type = els.secret.type==='password' ? 'text' : 'password';
+    });
+    els.genDevice.addEventListener('click', ()=>{ els.deviceId.value = uuidv4(); });
+    els.save.addEventListener('click', save);
+    els.test.addEventListener('click', test);
+    els.exportBtn.addEventListener('click', exportSettings);
+    els.importBtn.addEventListener('click', importSettingsPrompt);
+    els.file.addEventListener('change', importSettings);
+    els.clear.addEventListener('click', clearAll);
+
+    load();
+  </script>
+</body>
+</html>
