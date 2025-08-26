@@ -1,0 +1,577 @@
+<!DOCTYPE html>
+<html lang="ro">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Catalog — Biblioteca pentru toți</title>
+  <meta name="description" content="Catalog cu infinite scroll, filtre, acțiuni pe selecție și export CSV." />
+  <style>
+    :root{
+      --bg:#0f172a;--fg:#e2e8f0;--muted:#94a3b8;--card:#111827;--border:#1f2937;
+      --accent:#22c55e;--accent2:#3b82f6;--danger:#ef4444;--warn:#f59e0b
+    }
+    *{box-sizing:border-box}
+    html,body{margin:0;height:100%;background:var(--bg);color:var(--fg);font-family:system-ui,-apple-system,Segoe UI,Roboto,Ubuntu,Cantarell,Noto Sans,Arial}
+    a{color:var(--accent2);text-decoration:none} a:hover{text-decoration:underline}
+    .container{max-width:1200px;margin:0 auto;padding:24px}
+    header{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:16px}
+    .title{font-weight:600;letter-spacing:.2px}
+    .badge{display:inline-flex;align-items:center;gap:8px;border:1px solid var(--border);background:var(--card);padding:6px 10px;border-radius:999px;font-size:.85rem;color:var(--muted)}
+    .badge .dot{width:8px;height:8px;border-radius:999px;background:var(--warn)}
+    .badge.ok .dot{background:var(--accent)} .badge.err .dot{background:var(--danger)}
+
+    .card{border:1px solid var(--border);background:var(--card);border-radius:14px;padding:16px;margin-top:14px}
+    .row{display:flex;gap:10px;align-items:center;flex-wrap:wrap}
+    .grow{flex:1}
+    select,input,button{padding:10px 12px;border-radius:10px;border:1px solid var(--border);background:#0b1220;color:var(--fg);font-size:.95rem;outline:none}
+    button{cursor:pointer;background:#0a0f1e}
+    button.primary{background:var(--accent2);border-color:var(--accent2);color:#fff}
+    button.ghost{background:transparent}
+    button.danger{background:#1f0a0a;border-color:#3a1111}
+    button.warn{background:#231a0a;border-color:#3b2a0b}
+    button:disabled{opacity:.6;cursor:not-allowed}
+    .hint{font-size:.9rem;color:var(--muted)}
+
+    table{width:100%;border-collapse:separate;border-spacing:0;margin-top:10px}
+    thead th{position:sticky;top:0;background:#0b1220;padding:10px;border-bottom:1px solid var(--border);text-align:left}
+    tbody td{padding:10px;border-bottom:1px solid var(--border);vertical-align:top}
+    tbody tr.deleted td{color:#9ca3af}
+    .actions{display:flex;gap:10px;flex-wrap:wrap;margin-top:8px}
+    .pill{padding:8px 12px;border:1px solid var(--border);background:#0b1220;border-radius:999px}
+    .msg{margin-top:12px;padding:10px 12px;border-radius:10px;background:#0b1220;border:1px solid var(--border);color:var(--muted)}
+    .msg.ok{color:#c8facc;border-color:#134e26;background:#07140d}
+    .msg.err{color:#fecaca;border-color:#4c1d1d;background:#140707}
+
+    .sentinel{height:1px}
+    .sr{position:absolute;left:-9999px}
+
+    /* Modal istoric */
+    .modal-backdrop{position:fixed;inset:0;background:rgba(0,0,0,.6);display:none;align-items:center;justify-content:center;padding:20px}
+    .modal{width:min(900px,95vw);max-height:80vh;overflow:auto;border:1px solid var(--border);background:#0b1220;border-radius:14px;padding:16px}
+    .modal h3{margin:0 0 10px}
+    .event{border:1px solid var(--border);border-radius:10px;padding:8px;margin:6px 0;background:#0a0f1e}
+    .event .kv{display:grid;grid-template-columns:120px 1fr;gap:8px}
+    .closebar{display:flex;justify-content:flex-end;margin-top:8px}
+  </style>
+</head>
+<body>
+  <div class="container">
+    <header>
+      <div class="title">📖 Catalog — <span id="uiVersion"></span></div>
+      <div class="badge" id="cfgBadge"><span class="dot"></span><span id="cfgText">Config nevalidat</span></div>
+    </header>
+
+    <section class="card">
+      <div class="row">
+        <div class="grow">
+          <label for="librarySelect" class="sr">Bibliotecă</label>
+          <select id="librarySelect" disabled>
+            <option value="">— Încărcare biblioteci… —</option>
+          </select>
+        </div>
+        <a class="pill" href="index.html">⟵ Înapoi la Hub</a>
+      </div>
+
+      <div class="row" style="margin-top:8px">
+        <input id="query" class="grow" type="text" placeholder="Căutare: titlu, autori, editură, ISBN, ISSN…" />
+        <select id="status">
+          <option value="">Toate (fără 'deleted')</option>
+          <option value="disponibil">disponibil</option>
+          <option value="rezervat">rezervat</option>
+          <option value="împrumutat">împrumutat</option>
+          <option value="indisponibil">indisponibil</option>
+          <option value="deleted">deleted</option>
+        </select>
+        <button id="apply" class="primary">Aplică filtre</button>
+        <button id="clear" class="ghost">Curăță</button>
+        <button id="exportCsv" class="ghost">Export CSV (filtrat)</button>
+      </div>
+
+      <div class="actions">
+        <button id="btnDelete" class="danger" disabled>Soft-delete</button>
+        <button id="btnRestore" class="warn" disabled>Restore</button>
+        <button id="btnLoan" class="" disabled>Solicită împrumut</button>
+        <button id="btnReturn" class="" disabled>Solicită retur</button>
+        <span class="hint" id="permHint">Permisiune: —</span>
+      </div>
+
+      <div class="msg" id="statusMsg" hidden></div>
+
+      <table id="table">
+        <thead>
+          <tr>
+            <th><input type="checkbox" id="selAll" /></th>
+            <th>Nr</th>
+            <th>ISBN</th>
+            <th>Titlu</th>
+            <th>Autori</th>
+            <th>Editură</th>
+            <th>An</th>
+            <th>Limbă</th>
+            <th>Proprietar</th>
+            <th>Status</th>
+            <th>Acțiuni</th>
+          </tr>
+        </thead>
+        <tbody id="tbody">
+          <!-- rows injected -->
+        </tbody>
+      </table>
+      <div id="sentinel" class="sentinel"></div>
+    </section>
+  </div>
+
+  <!-- Modal istoric -->
+  <div id="backdrop" class="modal-backdrop" role="dialog" aria-modal="true" aria-labelledby="histTitle">
+    <div class="modal">
+      <h3 id="histTitle">Istoric carte</h3>
+      <div id="histBody"></div>
+      <div class="closebar"><button id="histClose">Închide</button></div>
+    </div>
+  </div>
+
+  <script>
+    const UI_VERSION = '0.1.0';
+    const PAGE_LIMIT = 50;
+
+    const LS_KEYS = {
+      url:'BPT_SCRIPT_URL',
+      secret:'BPT_SECRET',
+      deviceId:'BPT_DEVICE_ID',
+      email:'BPT_EMAIL',
+      phone:'BPT_PHONE',
+      activeLib:'BPT_ACTIVE_LIBRARY_ID'
+    };
+
+    const els = {
+      uiVersion: document.getElementById('uiVersion'),
+      cfgBadge: document.getElementById('cfgBadge'),
+      cfgText: document.getElementById('cfgText'),
+
+      librarySelect: document.getElementById('librarySelect'),
+      query: document.getElementById('query'),
+      status: document.getElementById('status'),
+      apply: document.getElementById('apply'),
+      clear: document.getElementById('clear'),
+      exportCsv: document.getElementById('exportCsv'),
+
+      btnDelete: document.getElementById('btnDelete'),
+      btnRestore: document.getElementById('btnRestore'),
+      btnLoan: document.getElementById('btnLoan'),
+      btnReturn: document.getElementById('btnReturn'),
+      permHint: document.getElementById('permHint'),
+
+      statusMsg: document.getElementById('statusMsg'),
+      tbody: document.getElementById('tbody'),
+      table: document.getElementById('table'),
+      selAll: document.getElementById('selAll'),
+      sentinel: document.getElementById('sentinel'),
+
+      backdrop: document.getElementById('backdrop'),
+      histBody: document.getElementById('histBody'),
+      histClose: document.getElementById('histClose'),
+    };
+
+    els.uiVersion.textContent = `UI v${UI_VERSION}`;
+
+    function setBadge(state, text){
+      els.cfgBadge.classList.remove('ok','err');
+      if(state==='ok') els.cfgBadge.classList.add('ok');
+      if(state==='err') els.cfgBadge.classList.add('err');
+      els.cfgText.textContent = text;
+    }
+    function showMsg(kind, text){
+      els.statusMsg.hidden = false;
+      els.statusMsg.classList.remove('ok','err');
+      if(kind) els.statusMsg.classList.add(kind);
+      els.statusMsg.textContent = text;
+    }
+    function clearMsg(){ els.statusMsg.hidden = true; els.statusMsg.textContent=''; els.statusMsg.classList.remove('ok','err'); }
+
+    function getCfg(){
+      return {
+        url: localStorage.getItem(LS_KEYS.url)||'',
+        secret: localStorage.getItem(LS_KEYS.secret)||'',
+        activeLib: localStorage.getItem(LS_KEYS.activeLib)||'',
+      };
+    }
+    async function apiCall(op, params={}){
+      const cfg = getCfg();
+      if(!cfg.url || !cfg.secret) throw new Error('config_missing');
+      const res = await fetch(cfg.url,{
+        method:'POST',
+        headers:{'Content-Type':'application/json'},
+        body: JSON.stringify({ token: cfg.secret, op, params })
+      });
+      const data = await res.json().catch(()=> ({}));
+      if(!data || data.ok!==true){
+        const code = data && data.error ? data.error : 'unknown_error';
+        const err = new Error(code);
+        err._server = data;
+        throw err;
+      }
+      return data.data;
+    }
+
+    // State
+    let libs = [];
+    let currentLib = null;      // {libraryId, name, permission, visibility}
+    let cursor = 0;
+    let loading = false;
+    let ended = false;
+    let rowCount = 0;           // sequential number for "Nr"
+
+    // Selection
+    function selectedIds(){
+      return Array.from(els.tbody.querySelectorAll('input.rowSel:checked')).map(c=>c.dataset.id);
+    }
+    function updateActionStates(){
+      const ids = selectedIds();
+      const selectedRows = ids.map(id => els.tbody.querySelector(`tr[data-id="${id}"]`));
+      const statuses = selectedRows.map(tr => tr.dataset.status);
+      const hasDeleted = statuses.some(s => s === 'deleted');
+      const hasNonDeleted = statuses.some(s => s !== 'deleted');
+      const hasDisponibil = statuses.some(s => s === 'disponibil');
+      const hasImprumutat = statuses.some(s => s === 'împrumutat');
+
+      const isOwner = currentLib && currentLib.permission === 'owner';
+
+      els.btnDelete.disabled = !(isOwner && hasNonDeleted && ids.length>0);
+      els.btnRestore.disabled = !(isOwner && hasDeleted && ids.length>0);
+      els.btnLoan.disabled = !(hasDisponibil && ids.length>0);
+      els.btnReturn.disabled = !(hasImprumutat && ids.length>0);
+    }
+
+    els.selAll.addEventListener('change', ()=>{
+      const checked = els.selAll.checked;
+      els.tbody.querySelectorAll('input.rowSel').forEach(cb => { cb.checked = checked; });
+      updateActionStates();
+    });
+
+    function addRow(item, idxBase){
+      const tr = document.createElement('tr');
+      tr.dataset.id = item.bookId;
+      tr.dataset.status = item.status;
+      if(item.status === 'deleted') tr.classList.add('deleted');
+
+      const nr = idxBase + 1;
+
+      const tdSel = document.createElement('td');
+      const cb = document.createElement('input');
+      cb.type = 'checkbox'; cb.className = 'rowSel';
+      cb.dataset.id = item.bookId;
+      cb.addEventListener('change', updateActionStates);
+      tdSel.appendChild(cb);
+
+      const tdNr = document.createElement('td'); tdNr.textContent = nr;
+
+      const tdIsbn = document.createElement('td'); tdIsbn.textContent = item.ISBN || '';
+      const tdTitlu = document.createElement('td'); tdTitlu.textContent = item.title || '';
+      const tdAutori = document.createElement('td'); tdAutori.textContent = item.authors || '';
+      const tdEdit = document.createElement('td'); tdEdit.textContent = item.publisher || '';
+      const tdAn = document.createElement('td'); tdAn.textContent = item.year || '';
+      const tdLang = document.createElement('td'); tdLang.textContent = item.language || '';
+      const tdOwner = document.createElement('td'); tdOwner.textContent = currentLib && currentLib.permission==='owner' ? 'eu' : 'altul';
+      const tdStatus = document.createElement('td'); tdStatus.textContent = item.status || '';
+
+      const tdAct = document.createElement('td');
+      const btnHist = document.createElement('button');
+      btnHist.textContent = 'Istoric';
+      btnHist.addEventListener('click', ()=> openHistory(item));
+      tdAct.appendChild(btnHist);
+
+      tr.appendChild(tdSel);
+      tr.appendChild(tdNr);
+      tr.appendChild(tdIsbn);
+      tr.appendChild(tdTitlu);
+      tr.appendChild(tdAutori);
+      tr.appendChild(tdEdit);
+      tr.appendChild(tdAn);
+      tr.appendChild(tdLang);
+      tr.appendChild(tdOwner);
+      tr.appendChild(tdStatus);
+      tr.appendChild(tdAct);
+
+      els.tbody.appendChild(tr);
+    }
+
+    async function loadMore(){
+      if(loading || ended || !currentLib) return;
+      loading = true;
+      try{
+        const q = els.query.value.trim();
+        const st = els.status.value;
+        const data = await apiCall('books.list', {
+          libraryId: currentLib.libraryId,
+          query: q || '',
+          status: st || undefined,
+          limit: PAGE_LIMIT,
+          cursor
+        });
+        const items = data.items || [];
+        for(let i=0;i<items.length;i++){
+          addRow(items[i], rowCount + i);
+        }
+        rowCount += items.length;
+        if(data.nextCursor === null || data.nextCursor === undefined){
+          ended = true;
+        }else{
+          cursor = data.nextCursor;
+        }
+        if(items.length === 0 && rowCount === 0){
+          showMsg('', 'Nu există rezultate pentru filtrele curente.');
+        }
+      }catch(e){
+        showMsg('err','Eroare la încărcare: ' + e.message);
+      }finally{
+        loading = false;
+      }
+    }
+
+    function resetList(){
+      els.tbody.innerHTML = '';
+      els.selAll.checked = false;
+      clearMsg();
+      cursor = 0;
+      rowCount = 0;
+      ended = false;
+      updateActionStates();
+    }
+
+    // Observer pentru infinite scroll
+    const ob = new IntersectionObserver((entries)=>{
+      for(const entry of entries){
+        if(entry.isIntersecting){
+          loadMore();
+        }
+      }
+    }, { rootMargin: '600px' });
+    ob.observe(els.sentinel);
+
+    // Init libs + restore active
+    async function init(){
+      const cfg = getCfg();
+      const ok = !!(cfg.url && cfg.secret);
+      setBadge(ok ? 'ok' : '', ok ? 'Config OK' : 'Config nevalidat');
+      if(!ok){ showMsg('err','Completează întâi Setările.'); return; }
+
+      try{
+        const data = await apiCall('libs.list');
+        libs = data.libraries || [];
+        const sel = els.librarySelect;
+        sel.innerHTML = '';
+        if(libs.length===0){
+          sel.innerHTML = '<option value="">(Nu există biblioteci)</option>';
+          sel.disabled = true;
+          return;
+        }
+        libs.sort((a,b)=> String(a.name||'').localeCompare(String(b.name||''),'ro'));
+        for(const lib of libs){
+          const opt = document.createElement('option');
+          opt.value = lib.libraryId;
+          opt.textContent = `${lib.name} — ${lib.permission}`;
+          opt.dataset.permission = lib.permission || '';
+          opt.dataset.visibility = lib.visibility || '';
+          sel.appendChild(opt);
+        }
+        sel.disabled = false;
+
+        const active = cfg.activeLib && libs.find(l=>l.libraryId===cfg.activeLib) ? cfg.activeLib : libs[0].libraryId;
+        sel.value = active;
+        onLibChange();
+      }catch(e){
+        showMsg('err','Nu pot încărca bibliotecile: ' + e.message);
+      }
+    }
+
+    function onLibChange(){
+      const sel = els.librarySelect;
+      const libId = sel.value;
+      localStorage.setItem(LS_KEYS.activeLib, libId || '');
+      currentLib = libs.find(l=>l.libraryId===libId) || null;
+      els.permHint.textContent = 'Permisiune: ' + (currentLib ? currentLib.permission : '—');
+      resetList();
+      loadMore();
+    }
+
+    // Filtre
+    els.apply.addEventListener('click', ()=>{
+      resetList();
+      loadMore();
+    });
+    els.clear.addEventListener('click', ()=>{
+      els.query.value = '';
+      els.status.value = '';
+      resetList();
+      loadMore();
+    });
+    els.librarySelect.addEventListener('change', onLibChange);
+
+    // Export CSV (filtrare curentă)
+    els.exportCsv.addEventListener('click', async ()=>{
+      if(!currentLib) return;
+      showMsg('', 'Pregătesc exportul CSV…');
+      try{
+        const rows = [];
+        let cur = 0;
+        const q = els.query.value.trim();
+        const st = els.status.value;
+
+        while(true){
+          const data = await apiCall('books.list', {
+            libraryId: currentLib.libraryId,
+            query: q || '',
+            status: st || undefined,
+            limit: PAGE_LIMIT,
+            cursor: cur
+          });
+          const items = data.items || [];
+          for(const r of items){
+            rows.push([
+              r.ISBN||'', r.title||'', r.authors||'', r.publisher||'',
+              r.year||'', r.language||'', r.status||'', r.bookId||''
+            ]);
+          }
+          if(data.nextCursor === null || data.nextCursor === undefined) break;
+          cur = data.nextCursor;
+        }
+        if(rows.length===0){ showMsg('', 'Nimic de exportat pentru filtrele curente.'); return; }
+
+        const header = ['ISBN','Titlu','Autori','Editură','An','Limbă','Status','bookId'];
+        const csv = [header].concat(rows).map(r => r.map(v=>{
+          const s = String(v).replace(/"/g,'""');
+          return `"${s}"`;
+        }).join(',')).join('\r\n');
+
+        const blob = new Blob([csv], {type:'text/csv;charset=utf-8;'});
+        const a = document.createElement('a');
+        a.href = URL.createObjectURL(blob);
+        a.download = `catalog_${currentLib.libraryId}.csv`;
+        a.click();
+        URL.revokeObjectURL(a.href);
+        showMsg('ok', `Exportat ${rows.length} rânduri.`);
+      }catch(e){
+        showMsg('err','Export eșuat: ' + e.message);
+      }
+    });
+
+    // Acțiuni pe selecții
+    els.btnDelete.addEventListener('click', async ()=>{
+      const ids = selectedIds();
+      if(ids.length===0 || !currentLib) return;
+      if(currentLib.permission!=='owner'){ showMsg('err','Doar owner poate șterge.'); return; }
+      if(!confirm(`Marchezi ca deleted ${ids.length} elemente?`)) return;
+
+      try{
+        for(const id of ids){
+          await apiCall('books.delete', { libraryId: currentLib.libraryId, bookId: id });
+          // Update UI
+          const tr = els.tbody.querySelector(`tr[data-id="${id}"]`);
+          if(tr){
+            tr.dataset.status = 'deleted';
+            tr.classList.add('deleted');
+            tr.querySelectorAll('td')[9].textContent = 'deleted'; // status col
+          }
+        }
+        updateActionStates();
+        showMsg('ok','Marcare ca deleted finalizată.');
+      }catch(e){
+        showMsg('err','Eroare la delete: ' + e.message);
+      }
+    });
+
+    els.btnRestore.addEventListener('click', async ()=>{
+      const ids = selectedIds();
+      if(ids.length===0 || !currentLib) return;
+      if(currentLib.permission!=='owner'){ showMsg('err','Doar owner poate restaura.'); return; }
+
+      try{
+        for(const id of ids){
+          await apiCall('books.restore', { libraryId: currentLib.libraryId, bookId: id });
+          const tr = els.tbody.querySelector(`tr[data-id="${id}"]`);
+          if(tr){
+            tr.dataset.status = 'disponibil';
+            tr.classList.remove('deleted');
+            tr.querySelectorAll('td')[9].textContent = 'disponibil'; // status col
+          }
+        }
+        updateActionStates();
+        showMsg('ok','Restaurare finalizată.');
+      }catch(e){
+        showMsg('err','Eroare la restore: ' + e.message);
+      }
+    });
+
+    els.btnLoan.addEventListener('click', async ()=>{
+      const ids = selectedIds();
+      if(ids.length===0 || !currentLib) return;
+      let okCnt = 0, failCnt = 0;
+      for(const id of ids){
+        try{
+          await apiCall('loans.request', { libraryId: currentLib.libraryId, bookId: id });
+          okCnt++;
+        }catch(e){
+          failCnt++;
+        }
+      }
+      showMsg('', `Solicitări împrumut trimise: OK=${okCnt}, erori=${failCnt}.`);
+    });
+
+    els.btnReturn.addEventListener('click', async ()=>{
+      const ids = selectedIds();
+      if(ids.length===0 || !currentLib) return;
+      let okCnt = 0, failCnt = 0;
+      for(const id of ids){
+        try{
+          await apiCall('loans.requestReturn', { libraryId: currentLib.libraryId, bookId: id });
+          okCnt++;
+        }catch(e){
+          failCnt++;
+        }
+      }
+      showMsg('', `Solicitări retur trimise: OK=${okCnt}, erori=${failCnt}.`);
+    });
+
+    // Istoric
+    async function openHistory(item){
+      try{
+        const data = await apiCall('events.bookHistory', { libraryId: currentLib.libraryId, bookId: item.bookId });
+        const evs = data.events || [];
+        els.histBody.innerHTML = '';
+        if(evs.length===0){
+          els.histBody.innerHTML = '<div class="hint">Nu există evenimente pentru această carte.</div>';
+        }else{
+          for(const e of evs){
+            const div = document.createElement('div');
+            div.className = 'event';
+            div.innerHTML = `
+              <div class="kv"><div><b>Tip</b></div><div>${e.type||''}</div></div>
+              <div class="kv"><div><b>Actor</b></div><div>${e.actorUser||''}</div></div>
+              <div class="kv"><div><b>Timp</b></div><div>${e.timestamp||''}</div></div>
+              <div class="kv"><div><b>Payload</b></div><div><code>${e.payload||''}</code></div></div>
+            `;
+            els.histBody.appendChild(div);
+          }
+        }
+        els.backdrop.style.display = 'flex';
+      }catch(err){
+        showMsg('err','Nu pot încărca istoricul: ' + err.message);
+      }
+    }
+    els.histClose.addEventListener('click', ()=> { els.backdrop.style.display='none'; });
+    els.backdrop.addEventListener('click', (e)=> { if(e.target===els.backdrop) els.backdrop.style.display='none'; });
+
+    // Row click convenience: click anywhere selects checkbox
+    els.tbody.addEventListener('click', (e)=>{
+      const tr = e.target.closest('tr');
+      if(!tr) return;
+      if(e.target.tagName.toLowerCase()==='button') return; // don't toggle when clicking buttons
+      const cb = tr.querySelector('input.rowSel');
+      if(cb && e.target!==cb){ cb.checked = !cb.checked; updateActionStates(); }
+    });
+
+    // Start
+    init();
+  </script>
+</body>
+</html>
