@@ -1,0 +1,651 @@
+<!DOCTYPE html>
+<html lang="ro">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Adaugă carte — Biblioteca pentru toți</title>
+  <meta name="description" content="Scanează EAN-13 / ISBN, folosește OCR, editează câmpurile și salvează cartea în biblioteca selectată." />
+  <style>
+    :root{
+      --bg:#0f172a;--fg:#e2e8f0;--muted:#94a3b8;--card:#111827;--border:#1f2937;
+      --accent:#22c55e;--accent2:#3b82f6;--danger:#ef4444;--warn:#f59e0b
+    }
+    *{box-sizing:border-box}
+    html,body{margin:0;height:100%;background:var(--bg);color:var(--fg);font-family:system-ui,-apple-system,Segoe UI,Roboto,Ubuntu,Cantarell,Noto Sans,Arial}
+    a{color:var(--accent2);text-decoration:none} a:hover{text-decoration:underline}
+    .container{max-width:1024px;margin:0 auto;padding:24px}
+    header{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:18px}
+    .title{font-weight:600;letter-spacing:.2px}
+    .badge{display:inline-flex;align-items:center;gap:8px;border:1px solid var(--border);background:var(--card);padding:6px 10px;border-radius:999px;font-size:.85rem;color:var(--muted)}
+    .badge .dot{width:8px;height:8px;border-radius:999px;background:var(--warn)}
+    .badge.ok .dot{background:var(--accent)} .badge.err .dot{background:var(--danger)}
+    .card{border:1px solid var(--border);background:var(--card);border-radius:14px;padding:18px;margin-top:16px}
+    .card h2{margin:0 0 10px;font-size:1.05rem}
+    .grid{display:grid;grid-template-columns:1fr 1fr;gap:16px}
+    @media (max-width:1000px){.grid{grid-template-columns:1fr}}
+    label{display:block;margin:8px 0 6px;color:var(--muted);font-size:.95rem}
+    input,textarea,select,button{width:100%;padding:10px 12px;border-radius:10px;border:1px solid var(--border);background:#0b1220;color:var(--fg);font-size:.95rem;outline:none}
+    textarea{min-height:110px;resize:vertical}
+    button{cursor:pointer;background:#0a0f1e}
+    button.primary{background:var(--accent2);border-color:var(--accent2);color:#fff}
+    button.ghost{background:transparent}
+    button.warn{background:#231a0a;border-color:#3b2a0b}
+    button.danger{background:#1f0a0a;border-color:#3a1111}
+    button:disabled{opacity:.6;cursor:not-allowed}
+    .row{display:flex;gap:10px;align-items:center;flex-wrap:wrap}
+    .row .grow{flex:1}
+    .msg{margin-top:12px;padding:10px 12px;border-radius:10px;background:#0b1220;border:1px solid var(--border);color:var(--muted)}
+    .msg.ok{color:#c8facc;border-color:#134e26;background:#07140d}
+    .msg.err{color:#fecaca;border-color:#4c1d1d;background:#140707}
+    .pill{padding:8px 12px;border:1px solid var(--border);background:#0b1220;border-radius:999px}
+    .section-title{font-weight:600;margin-bottom:8px}
+    .hint{font-size:.9rem;color:var(--muted);margin-top:6px}
+
+    /* Camera / Canvas */
+    .cam-wrap{position:relative;border:1px solid var(--border);border-radius:12px;overflow:hidden;background:#0b1220}
+    video{width:100%;height:auto;display:block}
+    canvas{max-width:100%;display:block}
+    .overlay{position:absolute;inset:0;pointer-events:none}
+    .crop-layer{position:absolute;inset:0;cursor:crosshair}
+    .crop-rect{position:absolute;border:2px dashed rgba(59,130,246,.85);background:rgba(59,130,246,.15);border-radius:6px}
+    .barcodes{position:absolute;inset:0;pointer-events:none}
+    .bbox{position:absolute;border:2px solid rgba(34,197,94,.9);border-radius:6px}
+
+    .sr{position:absolute;left:-9999px}
+  </style>
+</head>
+<body>
+  <div class="container">
+    <header>
+      <div class="title">➕ Adaugă carte — <span id="uiVersion"></span></div>
+      <div class="badge" id="cfgBadge"><span class="dot"></span><span id="cfgText">Config nevalidat</span></div>
+    </header>
+
+    <div class="grid">
+      <!-- Stânga: Scan + OCR -->
+      <section class="card" aria-labelledby="scan-sec">
+        <h2 id="scan-sec">Scan EAN-13 / OCR</h2>
+
+        <div class="row">
+          <div class="grow">
+            <label for="libSelect">Bibliotecă activă</label>
+            <select id="libSelect" disabled>
+              <option value="">— Încărcare biblioteci… —</option>
+            </select>
+          </div>
+          <a class="pill" href="index.html">⟵ Înapoi la Hub</a>
+        </div>
+
+        <div class="row" style="margin-top:8px">
+          <button id="btnStartCam">Pornește camera</button>
+          <button id="btnStopCam" disabled>Oprește camera</button>
+          <span class="hint" id="camHint">La detectarea unui cod valid, camera se oprește automat.</span>
+        </div>
+
+        <div id="camArea" class="cam-wrap" style="margin-top:12px; display:none">
+          <video id="video" muted playsinline></video>
+          <div class="overlay">
+            <div id="boxes" class="barcodes"></div>
+          </div>
+        </div>
+
+        <div class="row" style="margin-top:12px">
+          <div class="grow">
+            <label for="isbnManual">ISBN (manual)</label>
+            <input id="isbnManual" type="text" placeholder="978..." inputmode="numeric" />
+          </div>
+          <div class="">
+            <label class="sr" for="btnFillIsbn">Completează</label>
+            <button id="btnFillIsbn" class="primary" style="margin-top:28px">Completează din surse</button>
+          </div>
+        </div>
+
+        <div class="row">
+          <div class="grow">
+            <label for="issnManual">ISSN (manual)</label>
+            <input id="issnManual" type="text" placeholder="1234-5678" />
+          </div>
+          <div class="">
+            <label class="sr" for="btnFillIssn">Completează</label>
+            <button id="btnFillIssn" style="margin-top:28px">Completează din Crossref</button>
+          </div>
+        </div>
+
+        <div class="section-title" style="margin-top:8px">OCR din cadru / fișier</div>
+        <div class="row">
+          <button id="btnFreeze">Îngheață cadru</button>
+          <input id="fileImg" type="file" accept="image/*" />
+          <button id="btnOcr" disabled>OCR selecție → câmpuri</button>
+        </div>
+        <div id="canvasWrap" class="cam-wrap" style="margin-top:10px; display:none">
+          <div style="position:relative">
+            <canvas id="canvas"></canvas>
+            <div id="cropLayer" class="crop-layer"></div>
+          </div>
+          <div class="hint" style="padding:8px">Trage un dreptunghi peste zona cu text (de ex. CIP). Apoi apasă „OCR selecție”.</div>
+        </div>
+
+        <div id="scanMsg" class="msg" hidden></div>
+      </section>
+
+      <!-- Dreapta: Formular carte -->
+      <section class="card" aria-labelledby="form-sec">
+        <h2 id="form-sec">Formular carte</h2>
+
+        <label for="title">Titlu</label>
+        <input id="title" type="text" placeholder="Titlul cărții" />
+
+        <label for="authors">Autori</label>
+        <input id="authors" type="text" placeholder="Autor 1; Autor 2" />
+
+        <div class="grid">
+          <div>
+            <label for="publisher">Editură</label>
+            <input id="publisher" type="text" placeholder="Editură" />
+          </div>
+          <div>
+            <label for="year">An</label>
+            <input id="year" type="text" placeholder="YYYY" inputmode="numeric" />
+          </div>
+        </div>
+
+        <div class="grid">
+          <div>
+            <label for="language">Limbă</label>
+            <input id="language" type="text" placeholder="ro / en / ..." />
+          </div>
+          <div>
+            <label for="status">Status</label>
+            <select id="status">
+              <option value="disponibil">disponibil</option>
+              <option value="indisponibil">indisponibil</option>
+            </select>
+          </div>
+        </div>
+
+        <div class="grid">
+          <div>
+            <label for="isbn">ISBN</label>
+            <input id="isbn" type="text" placeholder="978..." inputmode="numeric" />
+          </div>
+          <div>
+            <label for="issn">ISSN</label>
+            <input id="issn" type="text" placeholder="1234-5678" />
+          </div>
+        </div>
+
+        <label for="source">Sursă metadate</label>
+        <input id="source" type="text" placeholder="openlibrary | googlebooks | crossref | manual" />
+
+        <label for="cipRaw">CIP / text brut (opțional)</label>
+        <textarea id="cipRaw" placeholder="Text OCR preluat (pentru referință)"></textarea>
+
+        <div class="actions" style="margin-top:10px">
+          <button id="btnSave" class="primary">Salvează în bibliotecă</button>
+          <button id="btnClear" class="ghost">Curăță formularul</button>
+          <a class="pill" href="catalog.html">📖 Deschide catalog</a>
+        </div>
+
+        <div id="formMsg" class="msg" hidden></div>
+      </section>
+    </div>
+  </div>
+
+  <!-- Tesseract.js pentru OCR (doar la nevoie) -->
+  <script src="https://cdn.jsdelivr.net/npm/tesseract.js@4.0.2/dist/tesseract.min.js"></script>
+
+  <script>
+    const UI_VERSION = '0.1.0';
+    const LS_KEYS = {
+      url:'BPT_SCRIPT_URL',
+      secret:'BPT_SECRET',
+      deviceId:'BPT_DEVICE_ID',
+      email:'BPT_EMAIL',
+      phone:'BPT_PHONE',
+      activeLib:'BPT_ACTIVE_LIBRARY_ID'
+    };
+
+    const els = {
+      uiVersion: document.getElementById('uiVersion'),
+      cfgBadge: document.getElementById('cfgBadge'),
+      cfgText: document.getElementById('cfgText'),
+
+      libSelect: document.getElementById('libSelect'),
+
+      btnStartCam: document.getElementById('btnStartCam'),
+      btnStopCam: document.getElementById('btnStopCam'),
+      camArea: document.getElementById('camArea'),
+      video: document.getElementById('video'),
+      boxes: document.getElementById('boxes'),
+      camHint: document.getElementById('camHint'),
+
+      isbnManual: document.getElementById('isbnManual'),
+      issnManual: document.getElementById('issnManual'),
+      btnFillIsbn: document.getElementById('btnFillIsbn'),
+      btnFillIssn: document.getElementById('btnFillIssn'),
+
+      btnFreeze: document.getElementById('btnFreeze'),
+      btnOcr: document.getElementById('btnOcr'),
+      fileImg: document.getElementById('fileImg'),
+      canvasWrap: document.getElementById('canvasWrap'),
+      canvas: document.getElementById('canvas'),
+      cropLayer: document.getElementById('cropLayer'),
+
+      title: document.getElementById('title'),
+      authors: document.getElementById('authors'),
+      publisher: document.getElementById('publisher'),
+      year: document.getElementById('year'),
+      language: document.getElementById('language'),
+      status: document.getElementById('status'),
+      isbn: document.getElementById('isbn'),
+      issn: document.getElementById('issn'),
+      source: document.getElementById('source'),
+      cipRaw: document.getElementById('cipRaw'),
+
+      btnSave: document.getElementById('btnSave'),
+      btnClear: document.getElementById('btnClear'),
+
+      scanMsg: document.getElementById('scanMsg'),
+      formMsg: document.getElementById('formMsg'),
+    };
+
+    els.uiVersion.textContent = `UI v${UI_VERSION}`;
+
+    function setBadge(state, text){
+      els.cfgBadge.classList.remove('ok','err');
+      if(state==='ok') els.cfgBadge.classList.add('ok');
+      if(state==='err') els.cfgBadge.classList.add('err');
+      els.cfgText.textContent = text;
+    }
+    function showMsg(el, kind, text){
+      el.hidden = false; el.classList.remove('ok','err');
+      if(kind) el.classList.add(kind);
+      el.textContent = text;
+    }
+    function clearMsg(el){ el.hidden = true; el.textContent=''; el.classList.remove('ok','err'); }
+
+    function getCfg(){
+      return {
+        url: localStorage.getItem(LS_KEYS.url)||'',
+        secret: localStorage.getItem(LS_KEYS.secret)||'',
+        lib: localStorage.getItem(LS_KEYS.activeLib)||''
+      };
+    }
+    async function apiCall(op, params={}){
+      const cfg = getCfg();
+      if(!cfg.url || !cfg.secret) throw new Error('config_missing');
+      const res = await fetch(cfg.url,{
+        method:'POST', headers:{'Content-Type':'application/json'},
+        body: JSON.stringify({token:cfg.secret, op, params})
+      });
+      const data = await res.json().catch(()=> ({}));
+      if(!data || data.ok!==true){
+        const code = (data && data.error) || 'unknown_error';
+        const err = new Error(code); err._server = data; throw err;
+      }
+      return data.data;
+    }
+
+    // ——— Init: config + biblioteci
+    async function init(){
+      const cfg = getCfg();
+      const ok = !!(cfg.url && cfg.secret);
+      setBadge(ok ? 'ok' : '', ok ? 'Config OK' : 'Config nevalidat');
+      if(!ok){ showMsg(els.scanMsg,'err','Completează întâi Setările.'); return; }
+
+      // Încarcă bibliotecile
+      try{
+        const data = await apiCall('libs.list');
+        const libs = data.libraries || [];
+        els.libSelect.innerHTML = '';
+        if(libs.length===0){
+          els.libSelect.innerHTML = '<option value="">(Nu există biblioteci)</option>';
+          els.libSelect.disabled = true;
+        }else{
+          libs.sort((a,b)=> String(a.name||'').localeCompare(String(b.name||''),'ro'));
+          for(const lib of libs){
+            const opt = document.createElement('option');
+            opt.value = lib.libraryId;
+            opt.textContent = `${lib.name} — ${lib.permission}`;
+            els.libSelect.appendChild(opt);
+          }
+          els.libSelect.disabled = false;
+          // restore selection
+          if(cfg.lib && libs.some(l=>l.libraryId===cfg.lib)){ els.libSelect.value = cfg.lib; }
+          els.libSelect.addEventListener('change', ()=>{
+            localStorage.setItem(LS_KEYS.activeLib, els.libSelect.value || '');
+          });
+        }
+      }catch(e){
+        showMsg(els.scanMsg,'err','Nu pot încărca bibliotecile: ' + e.message);
+      }
+    }
+
+    // ——— Camera + BarcodeDetector
+    let stream = null, rafId = null, detector = null;
+    async function startCamera(){
+      clearMsg(els.scanMsg);
+      if(!('BarcodeDetector' in window)){
+        showMsg(els.scanMsg,'warn','Browserul tău nu suportă încă scanarea nativă. Folosește câmpul ISBN sau OCR.');
+      }
+      try{
+        stream = await navigator.mediaDevices.getUserMedia({ video:{ facingMode: 'environment' }, audio:false });
+        els.video.srcObject = stream;
+        await els.video.play();
+        els.camArea.style.display = '';
+        els.btnStartCam.disabled = true;
+        els.btnStopCam.disabled = false;
+
+        if('BarcodeDetector' in window){
+          detector = new BarcodeDetector({ formats: ['ean_13'] });
+          scanLoop();
+        }
+      }catch(e){
+        showMsg(els.scanMsg,'err','Nu pot porni camera: ' + e.message);
+      }
+    }
+    function stopCamera(){
+      if(rafId){ cancelAnimationFrame(rafId); rafId = null; }
+      if(stream){
+        stream.getTracks().forEach(t=>t.stop());
+        stream = null;
+      }
+      els.btnStartCam.disabled = false;
+      els.btnStopCam.disabled = true;
+      els.camArea.style.display = 'none';
+      els.boxes.innerHTML = '';
+    }
+    async function scanLoop(){
+      if(!detector || !stream) return;
+      try{
+        const codes = await detector.detect(els.video);
+        els.boxes.innerHTML = '';
+        if(codes && codes.length){
+          for(const c of codes){
+            drawBox(c.boundingBox);
+            const raw = String(c.rawValue||'').trim();
+            if(raw && /^[0-9]{13}$/.test(raw)){
+              // Heuristic: ISBN-13 începe cu 978/979
+              if(/^97[89]/.test(raw)){
+                onDetectedISBN(raw);
+              }else{
+                // EAN-13 non-ISBN — tot îl propunem ca ISBN (poate să fie varianta tip retail)
+                onDetectedISBN(raw);
+              }
+              break;
+            }
+          }
+        }
+      }catch(e){
+        // ignore sporadic errors
+      }
+      rafId = requestAnimationFrame(scanLoop);
+    }
+    function drawBox(bb){
+      const div = document.createElement('div');
+      div.className = 'bbox';
+      div.style.left = bb.x + 'px';
+      div.style.top = bb.y + 'px';
+      div.style.width = bb.width + 'px';
+      div.style.height = bb.height + 'px';
+      els.boxes.appendChild(div);
+    }
+    async function onDetectedISBN(code){
+      stopCamera(); // stop imediat, conform cerinței
+      els.isbn.value = code;
+      els.isbnManual.value = code;
+      showMsg(els.scanMsg,'ok','Cod detectat: ' + code + '. Am oprit camera.');
+      await fillFromISBN(code);
+    }
+
+    // ——— OCR (freeze + selecție + Tesseract)
+    let snapCanvas, snapCtx, cropRect = null;
+    els.btnFreeze.addEventListener('click', ()=>{
+      clearMsg(els.scanMsg);
+      if(!els.video.srcObject){
+        showMsg(els.scanMsg,'err','Pornește camera sau încarcă o imagine.');
+        return;
+      }
+      const v = els.video;
+      const c = els.canvas;
+      c.width = v.videoWidth; c.height = v.videoHeight;
+      const ctx = c.getContext('2d');
+      ctx.drawImage(v,0,0,c.width,c.height);
+      els.canvasWrap.style.display = '';
+      setupCropLayer();
+      els.btnOcr.disabled = false;
+      showMsg(els.scanMsg,'', 'Cadru înghețat. Selectează o zonă și rulează OCR.');
+    });
+    els.fileImg.addEventListener('change', (ev)=>{
+      const f = ev.target.files[0];
+      if(!f) return;
+      const url = URL.createObjectURL(f);
+      const img = new Image();
+      img.onload = ()=>{
+        const c = els.canvas;
+        c.width = img.width; c.height = img.height;
+        const ctx = c.getContext('2d');
+        ctx.drawImage(img,0,0,c.width,c.height);
+        els.canvasWrap.style.display = '';
+        setupCropLayer();
+        els.btnOcr.disabled = false;
+        showMsg(els.scanMsg,'', 'Imagine încărcată. Selectează o zonă și rulează OCR.');
+        URL.revokeObjectURL(url);
+      };
+      img.src = url;
+    });
+
+    function setupCropLayer(){
+      cropRect = null;
+      const layer = els.cropLayer;
+      layer.innerHTML = '';
+      let startX=0,startY=0,box=null,isDown=false;
+
+      const toLocal = (e)=>{
+        const r = layer.getBoundingClientRect();
+        const x = Math.max(0, Math.min(e.clientX - r.left, r.width));
+        const y = Math.max(0, Math.min(e.clientY - r.top, r.height));
+        return {x,y};
+      };
+
+      layer.onpointerdown = (e)=>{
+        isDown = true;
+        const p = toLocal(e);
+        startX = p.x; startY = p.y;
+        box = document.createElement('div');
+        box.className = 'crop-rect';
+        box.style.left = startX + 'px';
+        box.style.top = startY + 'px';
+        box.style.width = '0px'; box.style.height = '0px';
+        layer.appendChild(box);
+      };
+      layer.onpointermove = (e)=>{
+        if(!isDown || !box) return;
+        const p = toLocal(e);
+        const x = Math.min(p.x, startX), y = Math.min(p.y, startY);
+        const w = Math.abs(p.x - startX), h = Math.abs(p.y - startY);
+        box.style.left = x + 'px'; box.style.top = y + 'px';
+        box.style.width = w + 'px'; box.style.height = h + 'px';
+      };
+      layer.onpointerup = (e)=>{
+        isDown = false;
+        const r = box.getBoundingClientRect();
+        const host = layer.getBoundingClientRect();
+        cropRect = { x: r.left - host.left, y: r.top - host.top, w: r.width, h: r.height };
+      };
+    }
+
+    els.btnOcr.addEventListener('click', async ()=>{
+      clearMsg(els.scanMsg);
+      if(!cropRect){ showMsg(els.scanMsg,'err','Selectează o zonă înainte de OCR.'); return; }
+      // Crop din canvas-ul principal
+      const src = els.canvas;
+      const tmp = document.createElement('canvas');
+      tmp.width = cropRect.w; tmp.height = cropRect.h;
+      const ctx = tmp.getContext('2d');
+      // coordonate raportate la canvas
+      const scaleX = src.width / els.cropLayer.clientWidth;
+      const scaleY = src.height / els.cropLayer.clientHeight;
+      ctx.drawImage(src, cropRect.x*scaleX, cropRect.y*scaleY, cropRect.w*scaleX, cropRect.h*scaleY, 0,0,tmp.width,tmp.height);
+
+      showMsg(els.scanMsg,'', 'Rulez OCR… (poate dura câteva secunde)');
+      try{
+        const { data } = await Tesseract.recognize(tmp, 'eng');
+        const text = (data && data.text) ? data.text.trim() : '';
+        if(text){
+          els.cipRaw.value = (els.cipRaw.value ? (els.cipRaw.value + '\n') : '') + text;
+          // Heuristici: extrage ISBN/ISSN din text
+          const isbnMatch = text.match(/ISBN(?:-13)?:?\s*([0-9\- ]{10,17})/i) || text.match(/\b(97[89][0-9\- ]{10,16})\b/);
+          if(isbnMatch){
+            const code = cleanIsbn(isbnMatch[1]);
+            els.isbn.value = code;
+            els.isbnManual.value = code;
+            await fillFromISBN(code);
+          }
+          const issnMatch = text.match(/ISSN:?\s*([0-9]{4}-?[0-9X]{4})/i);
+          if(issnMatch){
+            const code = normIssn(issnMatch[1]);
+            els.issn.value = code;
+            els.issnManual.value = code;
+            await fillFromISSN(code);
+          }
+          showMsg(els.scanMsg,'ok','OCR finalizat. Am completat câmpurile unde s-a putut.');
+        }else{
+          showMsg(els.scanMsg,'err','OCR nu a returnat text.');
+        }
+      }catch(e){
+        showMsg(els.scanMsg,'err','Eroare OCR: ' + e.message);
+      }
+    });
+
+    // ——— Helpers ISBN/ISSN + metadata
+    function cleanIsbn(v){
+      return String(v||'').replace(/[^0-9Xx]/g,'');
+    }
+    function normIssn(v){
+      const s = String(v||'').replace(/[^0-9Xx]/g,'').toUpperCase();
+      if(s.length===8) return s.slice(0,4)+'-'+s.slice(4);
+      return s;
+    }
+    function setIfEmpty(el, val){
+      if(!el.value && val) el.value = val;
+    }
+    async function fillFromISBN(isbn){
+      const code = cleanIsbn(isbn);
+      if(!code){ showMsg(els.formMsg,'err','ISBN invalid.'); return; }
+      clearMsg(els.formMsg);
+      try{
+        // 1) OpenLibrary (preferat)
+        const url1 = `https://openlibrary.org/api/books?bibkeys=ISBN:${code}&format=json&jscmd=data`;
+        const r1 = await fetch(url1);
+        const j1 = await r1.json();
+        const k = `ISBN:${code}`;
+        if(j1 && j1[k]){
+          const d = j1[k];
+          setIfEmpty(els.title, d.title);
+          if(d.authors && d.authors.length){
+            setIfEmpty(els.authors, d.authors.map(a=>a.name).join('; '));
+          }
+          if(d.publishers && d.publishers.length) setIfEmpty(els.publisher, d.publishers[0].name);
+          if(d.publish_date) setIfEmpty(els.year, (d.publish_date.match(/\d{4}/)||[''])[0]);
+          setIfEmpty(els.language, (d.languages && d.languages[0] && d.languages[0].key ? d.languages[0].key.split('/').pop() : ''));
+          els.source.value = els.source.value || 'openlibrary';
+          els.isbn.value = code;
+          return;
+        }
+        // 2) Google Books fallback
+        const url2 = `https://www.googleapis.com/books/v1/volumes?q=isbn:${code}`;
+        const r2 = await fetch(url2);
+        const j2 = await r2.json();
+        if(j2 && j2.items && j2.items.length){
+          const v = j2.items[0].volumeInfo || {};
+          setIfEmpty(els.title, v.title);
+          setIfEmpty(els.authors, (v.authors||[]).join('; '));
+          setIfEmpty(els.publisher, v.publisher);
+          setIfEmpty(els.year, (v.publishedDate||'').slice(0,4));
+          setIfEmpty(els.language, v.language);
+          els.source.value = els.source.value || 'googlebooks';
+          els.isbn.value = code;
+          return;
+        }
+        showMsg(els.formMsg,'', 'Nu am găsit metadate pentru acest ISBN. Poți completa manual.');
+      }catch(e){
+        showMsg(els.formMsg,'err','Eroare la completarea metadatelor: ' + e.message);
+      }
+    }
+    async function fillFromISSN(issn){
+      const code = normIssn(issn);
+      if(!code || code.length<9){ showMsg(els.formMsg,'err','ISSN invalid.'); return; }
+      clearMsg(els.formMsg);
+      try{
+        const url = `https://api.crossref.org/journals/${encodeURIComponent(code)}`;
+        const r = await fetch(url);
+        if(!r.ok) throw new Error('Crossref a răspuns cu ' + r.status);
+        const j = await r.json();
+        const m = j && j.message ? j.message : {};
+        setIfEmpty(els.title, m.title);
+        setIfEmpty(els.publisher, m.publisher);
+        els.source.value = els.source.value || 'crossref';
+        els.issn.value = code;
+      }catch(e){
+        showMsg(els.formMsg,'', 'Nu am găsit detalii pentru acest ISSN. Completează manual.');
+      }
+    }
+
+    els.btnFillIsbn.addEventListener('click', ()=> fillFromISBN(els.isbnManual.value || els.isbn.value));
+    els.btnFillIssn.addEventListener('click', ()=> fillFromISSN(els.issnManual.value || els.issn.value));
+
+    // ——— Salvare carte
+    els.btnSave.addEventListener('click', async ()=>{
+      clearMsg(els.formMsg);
+      const cfg = getCfg();
+      const libraryId = els.libSelect.value || cfg.lib;
+      if(!libraryId){ showMsg(els.formMsg,'err','Selectează o bibliotecă.'); return; }
+
+      const payload = {
+        libraryId,
+        ISBN: cleanIsbn(els.isbn.value),
+        ISSN: normIssn(els.issn.value),
+        title: els.title.value.trim(),
+        authors: els.authors.value.trim(),
+        publisher: els.publisher.value.trim(),
+        year: els.year.value.trim(),
+        language: els.language.value.trim(),
+        status: els.status.value,
+        source: (els.source.value || 'manual').trim(),
+        cipRaw: els.cipRaw.value
+      };
+      if(!payload.title && !payload.ISBN && !payload.ISSN){
+        showMsg(els.formMsg,'err','Completează cel puțin Titlu sau ISBN/ISSN.');
+        return;
+      }
+
+      try{
+        const data = await apiCall('books.save', payload);
+        showMsg(els.formMsg,'ok',`Cartea a fost salvată. ID: ${data.bookId}`);
+        // optional: curățăm ISBN/ISSN manual
+      }catch(e){
+        if(e.message==='duplicate'){
+          showMsg(els.formMsg,'err','Aceeași carte (ISBN/ISSN) există deja în această bibliotecă.');
+        }else{
+          showMsg(els.formMsg,'err','Eroare la salvare: ' + e.message);
+        }
+      }
+    });
+
+    els.btnClear.addEventListener('click', ()=>{
+      [els.title,els.authors,els.publisher,els.year,els.language,els.isbn,els.issn,els.source,els.cipRaw].forEach(el=> el.value='');
+      els.status.value = 'disponibil';
+      clearMsg(els.formMsg);
+      clearMsg(els.scanMsg);
+    });
+
+    // ——— Wire cameră
+    els.btnStartCam.addEventListener('click', startCamera);
+    els.btnStopCam.addEventListener('click', stopCamera);
+
+    // ——— On load
+    init();
+  </script>
+</body>
+</html>
