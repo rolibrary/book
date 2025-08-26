@@ -4,7 +4,7 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1" />
   <title>Colecții — Biblioteca pentru toți</title>
-  <meta name="description" content="Listează colecții, înscriere, părăsire și atașează/detașează bibliotecile tale la colecții." />
+  <meta name="description" content="Listează colecții, înscriere, părăsire și atașează/detașează bibliotecile tale la colecții. Afișează membri & biblioteci (collections.details) și permite creare self-service (collections.create)." />
   <style>
     :root{
       --bg:#0f172a;--fg:#e2e8f0;--muted:#94a3b8;--card:#111827;--border:#1f2937;
@@ -50,6 +50,13 @@
     .colHead{display:flex;justify-content:space-between;gap:10px;align-items:center}
     .colTitle{font-weight:600}
     .chips{display:flex;gap:8px;flex-wrap:wrap}
+
+    /* Detalii colecție */
+    .details{margin-top:10px;border-top:1px dashed #1f2a3a;padding-top:10px}
+    .section{margin-top:8px}
+    .miniTable{width:100%;border-collapse:separate;border-spacing:0}
+    .miniTable th,.miniTable td{padding:8px;border-bottom:1px solid #1f2937;text-align:left;vertical-align:top}
+    .tag{display:inline-block;padding:2px 6px;border:1px solid var(--border);border-radius:999px;font-size:.8rem;color:var(--muted);background:#0a0f1e}
     .sr{position:absolute;left:-9999px}
   </style>
 </head>
@@ -62,7 +69,7 @@
 
     <section class="card">
       <h2>Bibliotecile tale (owner) — pentru atașare la colecții</h2>
-      <div class="hint">Selectează bibliotecile pe care vrei să le atașezi/detașezi la colecțiile în care ești owner.</div>
+      <div class="hint">Bifează bibliotecile pe care vrei să le atașezi/detașezi la colecțiile în care ești owner.</div>
       <div id="libsOwned" class="libList"></div>
       <div class="row" style="margin-top:8px">
         <button id="selectAll" class="ghost">Selectează toate</button>
@@ -89,7 +96,7 @@
     <section class="card">
       <h2>Colecțiile mele</h2>
       <div class="row">
-        <span class="hint">Mai jos sunt colecțiile returnate de backend (acolo unde ești owner sau membru).</span>
+        <span class="hint">Sunt listate colecțiile unde ești membru. Apasă „Detalii” pentru membri & biblioteci.</span>
         <button id="refresh" class="ghost">Reîncarcă</button>
       </div>
       <div id="colsWrap"></div>
@@ -97,7 +104,7 @@
     </section>
 
     <section class="card">
-      <h2>(Opțional) Creează colecție</h2>
+      <h2>Creează colecție</h2>
       <div class="grid">
         <div>
           <label class="sr" for="newName">Nume</label>
@@ -109,15 +116,16 @@
         </div>
       </div>
       <div class="row" style="margin-top:8px">
-        <button id="btnCreate" class="primary">Creează</button>
-        <span class="hint">Necesită suport backend (admin.createCollection).</span>
+        <button id="btnCreateSelf" class="primary">Creează (self-service)</button>
+        <button id="btnCreateAdmin" class="ghost">Creează (admin)</button>
+        <span class="hint">„Self-service” folosește <code>collections.create</code>. Butonul „admin” folosește <code>admin.createCollection</code>.</span>
       </div>
       <div id="createMsg" class="msg" hidden></div>
     </section>
   </div>
 
   <script>
-    const UI_VERSION = '0.1.0';
+    const UI_VERSION = '0.1.1';
     const LS_KEYS = {
       url:'BPT_SCRIPT_URL',
       secret:'BPT_SECRET'
@@ -142,7 +150,8 @@
 
       newName: document.getElementById('newName'),
       newDesc: document.getElementById('newDesc'),
-      btnCreate: document.getElementById('btnCreate'),
+      btnCreateSelf: document.getElementById('btnCreateSelf'),
+      btnCreateAdmin: document.getElementById('btnCreateAdmin'),
       createMsg: document.getElementById('createMsg'),
     };
 
@@ -185,8 +194,8 @@
       return data.data;
     }
 
-    // —— Biblioteci deținute (owner) — selecție globală pentru attach/detach
-    let ownedLibs = []; // [{libraryId,name}, ...]
+    // —— Biblioteci deținute (owner) — selecție pentru attach/detach
+    let ownedLibs = [];
     function renderOwnedLibs(){
       els.libsOwned.innerHTML = '';
       if(ownedLibs.length===0){
@@ -207,12 +216,11 @@
     }
 
     // —— Colecții
-    let collections = []; // Array of objects from backend
-
+    let collections = [];
     function renderCollections(){
       els.colsWrap.innerHTML = '';
       if(collections.length===0){
-        els.colsWrap.innerHTML = '<div class="hint">Nu ai nicio colecție în listă (încearcă Join după ID sau verifică backend-ul).</div>';
+        els.colsWrap.innerHTML = '<div class="hint">Nu ai nicio colecție în listă. Încearcă Join după ID sau creează una.</div>';
         return;
       }
       for(const c of collections){
@@ -238,25 +246,20 @@
       const chipId = document.createElement('span'); chipId.className = 'pill'; chipId.textContent = (col.collectionId || '—');
       const chipRole = document.createElement('span'); chipRole.className = 'pill'; chipRole.textContent = 'rol: ' + (col.role || '—');
       chips.appendChild(chipId); chips.appendChild(chipRole);
-
       head.appendChild(chips);
+
       div.appendChild(head);
 
-      const body = document.createElement('div');
-      body.className = 'grid';
-      // Col stânga: descriere + acțiuni membership
-      const left = document.createElement('div');
-      left.innerHTML = `
-        <div class="hint">${col.description || ''}</div>
-        <div class="row" style="margin-top:8px">
-          <button class="ghost" data-act="leave">Părăsește colecția</button>
-        </div>
-      `;
-      const btnLeave = left.querySelector('button[data-act="leave"]');
-      if(col.role && col.role.toLowerCase()==='owner'){
-        // owner de obicei nu "părăsește" — dar lăsăm butonul să încerce; backend poate răspunde forbidden
-        btnLeave.textContent = 'Părăsește (poate eșua pentru owner)';
-      }
+      // Acțiuni membership
+      const actions = document.createElement('div');
+      actions.className = 'row';
+      actions.style.marginTop = '8px';
+      const btnDetails = document.createElement('button'); btnDetails.className = 'ghost'; btnDetails.textContent = 'Detalii';
+      const btnLeave = document.createElement('button'); btnLeave.className = 'ghost'; btnLeave.textContent = (col.role || '').toLowerCase()==='owner' ? 'Părăsește (poate eșua pentru owner)' : 'Părăsește';
+      actions.appendChild(btnDetails);
+      actions.appendChild(btnLeave);
+      div.appendChild(actions);
+
       btnLeave.addEventListener('click', async ()=>{
         try{
           await apiCall('collections.leave', { collectionId: col.collectionId });
@@ -267,47 +270,142 @@
         }
       });
 
-      // Col dreapta: attach/detach biblioteci
-      const right = document.createElement('div');
-      right.innerHTML = `
-        <div class="hint">Atașează / detașează bibliotecile selectate mai sus (din lista „Bibliotecile tale”).</div>
-        <div class="row" style="margin-top:8px">
-          <button class="primary" data-act="attach">Atașează selecția</button>
-          <button class="warn" data-act="detach">Detașează selecția</button>
-        </div>
+      // Attach/detach din selecția de sus
+      const attachRow = document.createElement('div');
+      attachRow.className = 'row';
+      attachRow.style.marginTop = '8px';
+      attachRow.innerHTML = `
+        <button class="primary" data-act="attach">Atașează selecția</button>
+        <button class="warn" data-act="detach">Detașează selecția</button>
+        <span class="hint">Afectează bibliotecile selectate sus (unde ești owner).</span>
       `;
-      const btnAttach = right.querySelector('button[data-act="attach"]');
-      const btnDetach = right.querySelector('button[data-act="detach"]');
+      const btnAttach = attachRow.querySelector('[data-act="attach"]');
+      const btnDetach = attachRow.querySelector('[data-act="detach"]');
+      div.appendChild(attachRow);
 
       btnAttach.addEventListener('click', async ()=>{
         const ids = selectedOwnedLibIds();
         if(ids.length===0){ showMsg(els.listMsg,'', 'Selectează întâi bibliotecile de atașat.'); return; }
         let ok=0, fail=0;
         for(const id of ids){
-          try{
-            await apiCall('collections.addLibrary', { collectionId: col.collectionId, libraryId: id });
-            ok++;
-          }catch(e){ fail++; }
+          try{ await apiCall('collections.addLibrary', { collectionId: col.collectionId, libraryId: id }); ok++; }
+          catch(e){ fail++; }
         }
         showMsg(els.listMsg, fail? 'err':'ok', `Atașare: OK=${ok}, erori=${fail}.`);
+        // reîncarcă detalii dacă sunt deschise
+        if(detailsWrap.dataset.loaded==='1') await loadDetails(col.collectionId, detailsWrap);
       });
+
       btnDetach.addEventListener('click', async ()=>{
         const ids = selectedOwnedLibIds();
         if(ids.length===0){ showMsg(els.listMsg,'', 'Selectează întâi bibliotecile de detașat.'); return; }
         let ok=0, fail=0;
         for(const id of ids){
-          try{
-            await apiCall('collections.removeLibrary', { collectionId: col.collectionId, libraryId: id });
-            ok++;
-          }catch(e){ fail++; }
+          try{ await apiCall('collections.removeLibrary', { collectionId: col.collectionId, libraryId: id }); ok++; }
+          catch(e){ fail++; }
         }
         showMsg(els.listMsg, fail? 'err':'ok', `Detașare: OK=${ok}, erori=${fail}.`);
+        if(detailsWrap.dataset.loaded==='1') await loadDetails(col.collectionId, detailsWrap);
       });
 
-      body.appendChild(left);
-      body.appendChild(right);
-      div.appendChild(body);
+      // Detalii (lazy)
+      const detailsWrap = document.createElement('div');
+      detailsWrap.className = 'details';
+      detailsWrap.style.display = 'none';
+      detailsWrap.innerHTML = '<div class="hint">Apasă „Detalii” pentru a încărca informațiile.</div>';
+      div.appendChild(detailsWrap);
+
+      btnDetails.addEventListener('click', async ()=>{
+        detailsWrap.style.display = detailsWrap.style.display === 'none' ? '' : 'none';
+        if(detailsWrap.style.display !== 'none' && detailsWrap.dataset.loaded !== '1'){
+          await loadDetails(col.collectionId, detailsWrap);
+        }
+      });
+
       return div;
+    }
+
+    async function loadDetails(collectionId, container){
+      container.dataset.loaded = '0';
+      container.innerHTML = '<div class="hint">Se încarcă detaliile…</div>';
+      try{
+        const data = await apiCall('collections.details', { collectionId });
+        const { collection, role, members, libraries } = data;
+
+        const top = document.createElement('div');
+        top.className = 'section';
+        top.innerHTML = `
+          <div class="row">
+            <span class="tag">rol: ${role}</span>
+            <span class="tag">createdBy: ${collection.createdBy || '—'}</span>
+            <span class="tag">createdAt: ${collection.createdAt || '—'}</span>
+            <button class="ghost" id="btnRefreshDetails">Reîncarcă detalii</button>
+          </div>
+          <div class="hint" style="margin-top:6px">${collection.description || ''}</div>
+        `;
+
+        // Members table
+        const memSec = document.createElement('div');
+        memSec.className = 'section';
+        const memRows = (members || []).map(m => `
+          <tr><td>${m.userId || ''}</td><td>${m.role || ''}</td><td>${m.joinedAt || ''}</td></tr>
+        `).join('');
+        memSec.innerHTML = `
+          <h3 style="margin:6px 0">Membri</h3>
+          <table class="miniTable">
+            <thead><tr><th>User</th><th>Rol</th><th>Din</th></tr></thead>
+            <tbody>${memRows || '<tr><td colspan="3" class="hint">—</td></tr>'}</tbody>
+          </table>
+        `;
+
+        // Libraries table (detach individual dacă ești owner)
+        const libSec = document.createElement('div');
+        libSec.className = 'section';
+        const canManage = String(role).toLowerCase() === 'owner';
+        const libRows = (libraries || []).map(lib => `
+          <tr>
+            <td>${lib.name || ''}</td>
+            <td><code>${lib.libraryId || ''}</code></td>
+            <td>${lib.ownerUser || ''}</td>
+            <td>${lib.visibility || ''}</td>
+            <td>${canManage ? `<button class="warn" data-lib="${lib.libraryId}">Detașează</button>` : ''}</td>
+          </tr>
+        `).join('');
+        libSec.innerHTML = `
+          <h3 style="margin:6px 0">Biblioteci în colecție</h3>
+          <table class="miniTable">
+            <thead><tr><th>Nume</th><th>libraryId</th><th>Owner</th><th>Vizibilitate</th><th>Acțiuni</th></tr></thead>
+            <tbody>${libRows || '<tr><td colspan="5" class="hint">—</td></tr>'}</tbody>
+          </table>
+        `;
+
+        container.innerHTML = '';
+        container.appendChild(top);
+        container.appendChild(memSec);
+        container.appendChild(libSec);
+        container.dataset.loaded = '1';
+
+        // wire refresh + detach individual
+        top.querySelector('#btnRefreshDetails').addEventListener('click', async ()=>{
+          await loadDetails(collectionId, container);
+        });
+        if(canManage){
+          container.querySelectorAll('button.warn[data-lib]').forEach(btn=>{
+            btn.addEventListener('click', async ()=>{
+              const libId = btn.getAttribute('data-lib');
+              try{
+                await apiCall('collections.removeLibrary', { collectionId, libraryId: libId });
+                showMsg(els.listMsg,'ok','Biblioteca a fost detașată.');
+                await loadDetails(collectionId, container);
+              }catch(e){
+                showMsg(els.listMsg,'err','Nu am putut detașa: ' + e.message);
+              }
+            });
+          });
+        }
+      }catch(e){
+        container.innerHTML = '<div class="msg err">Eroare la încărcarea detaliilor: ' + e.message + '</div>';
+      }
     }
 
     // —— Loaders
@@ -332,12 +430,11 @@
       try{
         const data = await apiCall('collections.list', {});
         collections = data.collections || [];
-        // optional: sort by name
         collections.sort((a,b)=> String(a.name||'').localeCompare(String(b.name||''),'ro'));
         renderCollections();
       }catch(e){
         els.colsWrap.innerHTML = '';
-        showMsg(els.listMsg,'err','Nu pot încărca colecțiile: ' + e.message + '. Verifică dacă backend-ul are implementate endpoints collections.*');
+        showMsg(els.listMsg,'err','Nu pot încărca colecțiile: ' + e.message);
       }
     }
 
@@ -361,29 +458,43 @@
       }
     });
 
-    els.btnCreate.addEventListener('click', async ()=>{
+    els.btnCreateSelf.addEventListener('click', async ()=>{
+      clearMsg(els.createMsg);
+      const name = els.newName.value.trim();
+      const description = els.newDesc.value.trim();
+      if(!name){ showMsg(els.createMsg,'err','Introdu un nume pentru colecție.'); return; }
+      // atașează opțional bibliotecile bifate
+      const libs = selectedOwnedLibIds();
+      try{
+        const data = await apiCall('collections.create', { name, description, libraries: libs });
+        showMsg(els.createMsg,'ok','Colecție creată. ID: ' + data.collectionId);
+        els.newName.value=''; els.newDesc.value='';
+        // goliți selecția bibliotecilor
+        document.querySelectorAll('.libCb').forEach(cb => cb.checked = false);
+        await loadCollections();
+      }catch(e){
+        showMsg(els.createMsg,'err','Nu s-a putut crea colecția: ' + e.message);
+      }
+    });
+
+    els.btnCreateAdmin.addEventListener('click', async ()=>{
       clearMsg(els.createMsg);
       const name = els.newName.value.trim();
       const description = els.newDesc.value.trim();
       if(!name){ showMsg(els.createMsg,'err','Introdu un nume pentru colecție.'); return; }
       try{
-        // Endpoint opțional, poate răspunde forbidden/invalid_request.
-        await apiCall('admin.createCollection', { name, description });
-        showMsg(els.createMsg,'ok','Colecție creată.');
+        const data = await apiCall('admin.createCollection', { name, description });
+        showMsg(els.createMsg,'ok','Colecție creată (admin). ID: ' + data.collectionId);
         els.newName.value=''; els.newDesc.value='';
         await loadCollections();
       }catch(e){
-        showMsg(els.createMsg,'err','Nu s-a putut crea colecția: ' + e.message + ' (verifică suportul backend).');
+        showMsg(els.createMsg,'err','Eroare la creare (admin): ' + e.message);
       }
     });
 
     els.refresh.addEventListener('click', loadAll);
-    els.selectAll.addEventListener('click', ()=>{
-      document.querySelectorAll('.libCb').forEach(cb => cb.checked = true);
-    });
-    els.clearSel.addEventListener('click', ()=>{
-      document.querySelectorAll('.libCb').forEach(cb => cb.checked = false);
-    });
+    els.selectAll.addEventListener('click', ()=>{ document.querySelectorAll('.libCb').forEach(cb => cb.checked = true); });
+    els.clearSel.addEventListener('click', ()=>{ document.querySelectorAll('.libCb').forEach(cb => cb.checked = false); });
 
     // —— Init
     (async function init(){
