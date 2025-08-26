@@ -1,0 +1,413 @@
+<!DOCTYPE html>
+<html lang="ro">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Bibliotecile mele — Biblioteca pentru toți</title>
+  <meta name="description" content="Creează, redenumește, setează vizibilitatea, partajează și arhivează bibliotecile tale." />
+  <style>
+    :root{
+      --bg:#0f172a;--fg:#e2e8f0;--muted:#94a3b8;--card:#111827;--border:#1f2937;
+      --accent:#22c55e;--accent2:#3b82f6;--danger:#ef4444;--warn:#f59e0b
+    }
+    *{box-sizing:border-box}
+    html,body{margin:0;height:100%;background:var(--bg);color:var(--fg);font-family:system-ui,-apple-system,Segoe UI,Roboto,Ubuntu,Cantarell,Noto Sans,Arial}
+    a{color:var(--accent2);text-decoration:none} a:hover{text-decoration:underline}
+    .container{max-width:1100px;margin:0 auto;padding:24px}
+    header{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:18px}
+    .title{font-weight:600;letter-spacing:.2px}
+    .badge{display:inline-flex;align-items:center;gap:8px;border:1px solid var(--border);background:var(--card);padding:6px 10px;border-radius:999px;font-size:.85rem;color:var(--muted)}
+    .badge .dot{width:8px;height:8px;border-radius:999px;background:var(--warn)}
+    .badge.ok .dot{background:var(--accent)} .badge.err .dot{background:var(--danger)}
+
+    .card{border:1px solid var(--border);background:var(--card);border-radius:14px;padding:16px;margin-top:14px}
+    .card h2{margin:0 0 10px;font-size:1.05rem}
+    .row{display:flex;gap:10px;align-items:center;flex-wrap:wrap}
+    .grid{display:grid;grid-template-columns:1fr 1fr;gap:16px}
+    @media (max-width:900px){.grid{grid-template-columns:1fr}}
+    input,select,button,textarea{width:100%;padding:10px 12px;border-radius:10px;border:1px solid var(--border);background:#0b1220;color:var(--fg);font-size:.95rem;outline:none}
+    textarea{min-height:100px;resize:vertical}
+    button{cursor:pointer;background:#0a0f1e}
+    button.primary{background:var(--accent2);border-color:var(--accent2);color:#fff}
+    button.ghost{background:transparent}
+    button.warn{background:#231a0a;border-color:#3b2a0b}
+    button.danger{background:#1f0a0a;border-color:#3a1111}
+    button:disabled{opacity:.6;cursor:not-allowed}
+    .hint{font-size:.9rem;color:var(--muted)}
+    .msg{margin-top:12px;padding:10px 12px;border-radius:10px;background:#0b1220;border:1px solid var(--border);color:var(--muted)}
+    .msg.ok{color:#c8facc;border-color:#134e26;background:#07140d}
+    .msg.err{color:#fecaca;border-color:#4c1d1d;background:#140707}
+
+    .lib{border:1px solid var(--border);border-radius:12px;padding:12px;margin-top:12px;background:#0b1220}
+    .libHeader{display:flex;justify-content:space-between;gap:10px;align-items:center}
+    .libTitle{font-weight:600}
+    .pill{padding:6px 10px;border:1px solid var(--border);background:#0a0f1e;border-radius:999px;font-size:.85rem;color:var(--muted)}
+    .libBody{margin-top:10px;display:grid;grid-template-columns:1fr 1fr;gap:12px}
+    @media (max-width:900px){.libBody{grid-template-columns:1fr}}
+    .actions{display:flex;gap:8px;flex-wrap:wrap}
+    .sr{position:absolute;left:-9999px}
+  </style>
+</head>
+<body>
+  <div class="container">
+    <header>
+      <div class="title">🏛️ Bibliotecile mele — <span id="uiVersion"></span></div>
+      <div class="badge" id="cfgBadge"><span class="dot"></span><span id="cfgText">Config nevalidat</span></div>
+    </header>
+
+    <section class="card">
+      <h2>Creează o bibliotecă</h2>
+      <div class="grid">
+        <div>
+          <label for="newName" class="sr">Nume bibliotecă</label>
+          <input id="newName" type="text" placeholder="Ex: Biblioteca Familie" />
+        </div>
+        <div>
+          <label for="newVis" class="sr">Vizibilitate</label>
+          <select id="newVis">
+            <option value="private">private</option>
+            <option value="shared">shared</option>
+            <option value="hidden">hidden</option>
+          </select>
+        </div>
+      </div>
+      <label for="newPolicy" class="sr">Policy (JSON)</label>
+      <textarea id="newPolicy" placeholder='Policy JSON (opțional). Implicit: {"autoApprove":false,"loanMaxDays":30}'></textarea>
+      <div class="actions" style="margin-top:8px">
+        <button id="btnCreate" class="primary">Creează bibliotecă</button>
+        <a class="pill" href="index.html">⟵ Înapoi la Hub</a>
+      </div>
+      <div id="createMsg" class="msg" hidden></div>
+    </section>
+
+    <section class="card">
+      <h2>Lista bibliotecilor</h2>
+      <div class="row">
+        <span class="hint">Apare atât ce deții (owner), cât și cele în care ești membru.</span>
+        <div class="actions">
+          <button id="refresh" class="ghost">Reîncarcă</button>
+        </div>
+      </div>
+      <div id="libs"></div>
+      <div id="listMsg" class="msg" hidden></div>
+    </section>
+  </div>
+
+  <script>
+    const UI_VERSION = '0.1.0';
+    const LS_KEYS = {
+      url:'BPT_SCRIPT_URL',
+      secret:'BPT_SECRET',
+      activeLib:'BPT_ACTIVE_LIBRARY_ID'
+    };
+
+    const els = {
+      uiVersion: document.getElementById('uiVersion'),
+      cfgBadge: document.getElementById('cfgBadge'),
+      cfgText: document.getElementById('cfgText'),
+
+      newName: document.getElementById('newName'),
+      newVis: document.getElementById('newVis'),
+      newPolicy: document.getElementById('newPolicy'),
+      btnCreate: document.getElementById('btnCreate'),
+      createMsg: document.getElementById('createMsg'),
+
+      libsWrap: document.getElementById('libs'),
+      listMsg: document.getElementById('listMsg'),
+      refresh: document.getElementById('refresh'),
+    };
+
+    els.uiVersion.textContent = `UI v${UI_VERSION}`;
+
+    function setBadge(state, text){
+      els.cfgBadge.classList.remove('ok','err');
+      if(state==='ok') els.cfgBadge.classList.add('ok');
+      if(state==='err') els.cfgBadge.classList.add('err');
+      els.cfgText.textContent = text;
+    }
+    function showMsg(el, kind, text){
+      el.hidden = false; el.classList.remove('ok','err');
+      if(kind) el.classList.add(kind);
+      el.textContent = text;
+    }
+    function clearMsg(el){ el.hidden = true; el.textContent=''; el.classList.remove('ok','err'); }
+
+    function cfg(){
+      return {
+        url: localStorage.getItem(LS_KEYS.url)||'',
+        secret: localStorage.getItem(LS_KEYS.secret)||'',
+      };
+    }
+    async function apiCall(op, params = {}){
+      const c = cfg();
+      if(!c.url || !c.secret) throw new Error('config_missing');
+      const res = await fetch(c.url,{
+        method:'POST',
+        headers:{'Content-Type':'application/json'},
+        body: JSON.stringify({ token: c.secret, op, params })
+      });
+      const data = await res.json().catch(()=> ({}));
+      if(!data || data.ok!==true){
+        const code = data && data.error ? data.error : 'unknown_error';
+        const err = new Error(code);
+        err._server = data;
+        throw err;
+      }
+      return data.data;
+    }
+
+    // Create library
+    els.btnCreate.addEventListener('click', async ()=>{
+      clearMsg(els.createMsg);
+      const name = els.newName.value.trim();
+      const visibility = els.newVis.value;
+      const policyRaw = els.newPolicy.value.trim();
+      if(!name){ showMsg(els.createMsg,'err','Completează numele bibliotecii.'); return; }
+
+      let policy = undefined;
+      if(policyRaw){
+        try{
+          policy = JSON.stringify(JSON.parse(policyRaw));
+        }catch(e){
+          showMsg(els.createMsg,'err','Policy JSON invalid: ' + e.message);
+          return;
+        }
+      }
+
+      try{
+        const data = await apiCall('libs.create', { name, visibility, policy });
+        showMsg(els.createMsg,'ok', 'Bibliotecă creată. ID: ' + data.libraryId);
+        els.newName.value=''; els.newPolicy.value='';
+        await loadLibs();
+      }catch(e){
+        showMsg(els.createMsg,'err','Eroare la creare: ' + e.message);
+      }
+    });
+
+    // Load libraries
+    async function loadLibs(){
+      clearMsg(els.listMsg);
+      els.libsWrap.innerHTML = '';
+      try{
+        const data = await apiCall('libs.list');
+        const libs = (data.libraries||[]).slice().sort((a,b)=> String(a.name||'').localeCompare(String(b.name||''),'ro'));
+        if(libs.length===0){
+          showMsg(els.listMsg,'', 'Nu ai biblioteci încă.');
+          return;
+        }
+        for(const lib of libs){
+          els.libsWrap.appendChild(renderLibraryCard(lib));
+        }
+      }catch(e){
+        showMsg(els.listMsg,'err','Eroare la încărcare: ' + e.message);
+      }
+    }
+
+    function renderLibraryCard(lib){
+      const div = document.createElement('div');
+      div.className = 'lib';
+      div.dataset.id = lib.libraryId;
+
+      const header = document.createElement('div');
+      header.className = 'libHeader';
+
+      const title = document.createElement('div');
+      title.className = 'libTitle';
+      title.textContent = `${lib.name} — ${lib.permission}`;
+      header.appendChild(title);
+
+      const chips = document.createElement('div');
+      const chipVis = document.createElement('span');
+      chipVis.className = 'pill';
+      chipVis.textContent = 'visibility: ' + (lib.visibility || '—');
+      chips.appendChild(chipVis);
+
+      const btnSetActive = document.createElement('button');
+      btnSetActive.className = 'pill';
+      btnSetActive.textContent = 'Setează activă';
+      btnSetActive.addEventListener('click', ()=>{
+        localStorage.setItem('BPT_ACTIVE_LIBRARY_ID', lib.libraryId);
+        showMsg(els.listMsg,'ok','Biblioteca a fost setată ca activă.');
+      });
+      chips.appendChild(btnSetActive);
+
+      // Quick nav
+      const aCat = document.createElement('a');
+      aCat.className = 'pill'; aCat.href = 'catalog.html'; aCat.textContent = 'Deschide catalog';
+      const aAdd = document.createElement('a');
+      aAdd.className = 'pill'; aAdd.href = 'add.html'; aAdd.textContent = 'Adaugă carte';
+      chips.appendChild(aCat); chips.appendChild(aAdd);
+
+      header.appendChild(chips);
+      div.appendChild(header);
+
+      // Body (owner-only controls)
+      const body = document.createElement('div');
+      body.className = 'libBody';
+
+      if(lib.permission === 'owner'){
+        // Rename
+        const renameBox = document.createElement('div');
+        renameBox.innerHTML = `
+          <label class="sr">Redenumește</label>
+          <input type="text" placeholder="Nume nou" />
+          <div class="actions"><button class="primary">Redenumește</button></div>
+        `;
+        const rnInput = renameBox.querySelector('input');
+        const rnBtn = renameBox.querySelector('button');
+        rnBtn.addEventListener('click', async ()=>{
+          const name = rnInput.value.trim();
+          if(!name){ showMsg(els.listMsg,'err','Introdu un nume nou.'); return; }
+          try{
+            await apiCall('libs.update', { libraryId: lib.libraryId, name });
+            showMsg(els.listMsg,'ok','Numele a fost actualizat.');
+            await loadLibs();
+          }catch(e){ showMsg(els.listMsg,'err','Eroare la redenumire: ' + e.message); }
+        });
+        body.appendChild(renameBox);
+
+        // Visibility
+        const visBox = document.createElement('div');
+        visBox.innerHTML = `
+          <label class="sr">Vizibilitate</label>
+          <select>
+            <option value="private">private</option>
+            <option value="shared">shared</option>
+            <option value="hidden">hidden</option>
+          </select>
+          <div class="actions"><button>Salvează vizibilitatea</button></div>
+        `;
+        const visSel = visBox.querySelector('select');
+        visSel.value = lib.visibility || 'private';
+        visBox.querySelector('button').addEventListener('click', async ()=>{
+          const visibility = visSel.value;
+          try{
+            await apiCall('libs.update', { libraryId: lib.libraryId, visibility });
+            showMsg(els.listMsg,'ok','Vizibilitatea a fost actualizată.');
+            await loadLibs();
+          }catch(e){ showMsg(els.listMsg,'err','Eroare la actualizare vizibilitate: ' + e.message); }
+        });
+        body.appendChild(visBox);
+
+        // Policy JSON
+        const polBox = document.createElement('div');
+        polBox.innerHTML = `
+          <label class="sr">Policy JSON</label>
+          <textarea placeholder='{"autoApprove":false,"loanMaxDays":30}'></textarea>
+          <div class="actions"><button>Salvează policy</button></div>
+          <div class="hint">Dacă lași gol, policy rămâne neschimbat.</div>
+        `;
+        const polTxt = polBox.querySelector('textarea');
+        polBox.querySelector('button').addEventListener('click', async ()=>{
+          const raw = polTxt.value.trim();
+          if(!raw){ showMsg(els.listMsg,'', 'Policy neschimbat.'); return; }
+          try{
+            const pretty = JSON.stringify(JSON.parse(raw));
+            await apiCall('libs.update', { libraryId: lib.libraryId, policy: pretty });
+            showMsg(els.listMsg,'ok','Policy actualizat.');
+            polTxt.value = '';
+          }catch(e){
+            showMsg(els.listMsg,'err','Policy JSON invalid sau eroare: ' + e.message);
+          }
+        });
+        body.appendChild(polBox);
+
+        // Share / Unshare
+        const shareBox = document.createElement('div');
+        shareBox.innerHTML = `
+          <div class="grid" style="grid-template-columns:2fr 1fr;gap:10px">
+            <div>
+              <label class="sr">Email utilizator</label>
+              <input type="email" placeholder="user@example.com" />
+            </div>
+            <div>
+              <label class="sr">Permisiune</label>
+              <select>
+                <option value="read">read</option>
+                <option value="write">write</option>
+              </select>
+            </div>
+          </div>
+          <div class="actions">
+            <button class="primary">Acordă acces</button>
+            <button class="danger">Revocă acces</button>
+          </div>
+          <div class="hint">Momentan, lista membrilor nu e disponibilă. Poți adăuga sau revoca accesul după email.</div>
+        `;
+        const shEmail = shareBox.querySelector('input[type="email"]');
+        const shPerm = shareBox.querySelector('select');
+        const btnGrant = shareBox.querySelector('button.primary');
+        const btnRevoke = shareBox.querySelector('button.danger');
+        btnGrant.addEventListener('click', async ()=>{
+          const userId = shEmail.value.trim();
+          const permission = shPerm.value;
+          if(!userId){ showMsg(els.listMsg,'err','Introduce emailul utilizatorului.'); return; }
+          try{
+            await apiCall('libs.share', { libraryId: lib.libraryId, userId, permission });
+            showMsg(els.listMsg,'ok','Acces acordat.');
+            shEmail.value='';
+          }catch(e){ showMsg(els.listMsg,'err','Eroare la share: ' + e.message); }
+        });
+        btnRevoke.addEventListener('click', async ()=>{
+          const userId = shEmail.value.trim();
+          if(!userId){ showMsg(els.listMsg,'err','Introduce emailul utilizatorului de revocat.'); return; }
+          try{
+            await apiCall('libs.unshare', { libraryId: lib.libraryId, userId });
+            showMsg(els.listMsg,'ok','Acces revocat.');
+            shEmail.value='';
+          }catch(e){ showMsg(els.listMsg,'err','Eroare la unshare: ' + e.message); }
+        });
+        body.appendChild(shareBox);
+
+        // Archive / Restore
+        const archBox = document.createElement('div');
+        archBox.innerHTML = `
+          <div class="actions">
+            <button class="warn">Arhivează</button>
+            <button class="ghost">Restaură</button>
+          </div>
+          <div class="hint">Starea curentă de arhivare nu e vizibilă în UI. Aceste acțiuni trimit <code>libs.update</code> cu <code>archived=true</code> sau gol.</div>
+        `;
+        const btnArch = archBox.querySelector('button.warn');
+        const btnRest = archBox.querySelector('button.ghost');
+        btnArch.addEventListener('click', async ()=>{
+          if(!confirm('Arhivezi această bibliotecă?')) return;
+          try{
+            await apiCall('libs.update', { libraryId: lib.libraryId, archived: true });
+            showMsg(els.listMsg,'ok','Biblioteca a fost arhivată.');
+          }catch(e){ showMsg(els.listMsg,'err','Eroare la arhivare: ' + e.message); }
+        });
+        btnRest.addEventListener('click', async ()=>{
+          try{
+            await apiCall('libs.update', { libraryId: lib.libraryId, archived: '' });
+            showMsg(els.listMsg,'ok','Biblioteca a fost restaurată.');
+          }catch(e){ showMsg(els.listMsg,'err','Eroare la restaurare: ' + e.message); }
+        });
+        body.appendChild(archBox);
+      } else {
+        const info = document.createElement('div');
+        info.className = 'hint';
+        info.textContent = 'Nu ești owner pe această bibliotecă. Poți naviga și vedea catalogul, dar nu poți face schimbări administrative.';
+        body.appendChild(info);
+      }
+
+      div.appendChild(body);
+      return div;
+    }
+
+    async function init(){
+      const c = cfg();
+      const ok = !!(c.url && c.secret);
+      setBadge(ok ? 'ok' : '', ok ? 'Config OK' : 'Config nevalidat');
+      if(!ok){
+        showMsg(els.listMsg,'err','Completează întâi Setările (Script URL + Secret).');
+        return;
+      }
+      await loadLibs();
+    }
+
+    els.refresh.addEventListener('click', loadLibs);
+    init();
+  </script>
+</body>
+</html>
