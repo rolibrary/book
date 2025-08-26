@@ -1,0 +1,395 @@
+<!DOCTYPE html>
+<html lang="ro">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Istoric carte — Biblioteca pentru toți</title>
+  <meta name="description" content="Istoric evenimente pentru o carte din bibliotecă." />
+  <style>
+    :root{
+      --bg:#0f172a;--fg:#e2e8f0;--muted:#94a3b8;--card:#111827;--border:#1f2937;
+      --accent:#22c55e;--accent2:#3b82f6;--danger:#ef4444;--warn:#f59e0b
+    }
+    *{box-sizing:border-box}
+    html,body{margin:0;height:100%;background:var(--bg);color:var(--fg);font-family:system-ui,-apple-system,Segoe UI,Roboto,Ubuntu,Cantarell,Noto Sans,Arial}
+    a{color:var(--accent2);text-decoration:none} a:hover{text-decoration:underline}
+    .container{max-width:1000px;margin:0 auto;padding:24px}
+    header{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:18px}
+    .title{font-weight:600;letter-spacing:.2px}
+    .badge{display:inline-flex;align-items:center;gap:8px;border:1px solid var(--border);background:var(--card);padding:6px 10px;border-radius:999px;font-size:.85rem;color:var(--muted)}
+    .badge .dot{width:8px;height:8px;border-radius:999px;background:var(--warn)}
+    .badge.ok .dot{background:var(--accent)} .badge.err .dot{background:var(--danger)}
+
+    .card{border:1px solid var(--border);background:var(--card);border-radius:14px;padding:16px;margin-top:14px}
+    .card h2{margin:0 0 10px;font-size:1.05rem}
+    .row{display:flex;gap:10px;align-items:center;flex-wrap:wrap}
+    .grid{display:grid;grid-template-columns:1fr 1fr;gap:16px}
+    @media (max-width:900px){.grid{grid-template-columns:1fr}}
+
+    input,select,button,textarea{width:100%;padding:10px 12px;border-radius:10px;border:1px solid var(--border);background:#0b1220;color:var(--fg);font-size:.95rem;outline:none}
+    button{cursor:pointer;background:#0a0f1e}
+    button.primary{background:var(--accent2);border-color:var(--accent2);color:#fff}
+    button.ghost{background:transparent}
+    button.warn{background:#231a0a;border-color:#3b2a0b}
+    button.danger{background:#1f0a0a;border-color:#3a1111}
+    button:disabled{opacity:.6;cursor:not-allowed}
+    .pill{padding:8px 12px;border:1px solid var(--border);background:#0b1220;border-radius:999px}
+
+    .msg{margin-top:12px;padding:10px 12px;border-radius:10px;background:#0b1220;border:1px solid var(--border);color:var(--muted)}
+    .msg.ok{color:#c8facc;border-color:#134e26;background:#07140d}
+    .msg.err{color:#fecaca;border-color:#4c1d1d;background:#140707}
+
+    /* Timeline */
+    .timeline{margin-top:8px}
+    .ev{display:grid;grid-template-columns:140px 1fr;gap:12px;border:1px solid var(--border);border-radius:12px;padding:10px;background:#0a0f1e;margin:8px 0}
+    .ev .meta{color:var(--muted)}
+    .ev .type{font-weight:600}
+    .ev code{white-space:pre-wrap;word-break:break-word}
+
+    .bookHeader{border:1px solid var(--border);border-radius:12px;padding:12px;background:#0b1220}
+    .bookHeader .kv{display:grid;grid-template-columns:140px 1fr;gap:8px}
+    .bookHeader b{font-weight:600}
+
+    .sr{position:absolute;left:-9999px}
+  </style>
+</head>
+<body>
+  <div class="container">
+    <header>
+      <div class="title">🧭 Istoric carte — <span id="uiVersion"></span></div>
+      <div class="badge" id="cfgBadge"><span class="dot"></span><span id="cfgText">Config nevalidat</span></div>
+    </header>
+
+    <section class="card">
+      <h2>Identificare</h2>
+      <div class="grid">
+        <div>
+          <label class="sr" for="libraryId">Library ID</label>
+          <input id="libraryId" type="text" placeholder="libraryId (se preia din selecția activă dacă e gol)" />
+        </div>
+        <div>
+          <label class="sr" for="bookId">Book ID</label>
+          <input id="bookId" type="text" placeholder="bookId" />
+        </div>
+      </div>
+      <div class="row" style="margin-top:8px">
+        <button id="btnLoad" class="primary">Încarcă istoric</button>
+        <button id="btnCopyIds" class="ghost">Copiază IDs</button>
+        <a class="pill" href="catalog.html">⟵ Catalog</a>
+        <a class="pill" href="index.html">🏠 Hub</a>
+      </div>
+      <div id="topMsg" class="msg" hidden></div>
+    </section>
+
+    <section class="card">
+      <h2>Cartea</h2>
+      <div id="bookBox" class="bookHeader">
+        <div class="kv"><div><b>Titlu</b></div><div id="b_title">—</div></div>
+        <div class="kv"><div><b>Autori</b></div><div id="b_authors">—</div></div>
+        <div class="kv"><div><b>Editură</b></div><div id="b_publisher">—</div></div>
+        <div class="kv"><div><b>An</b></div><div id="b_year">—</div></div>
+        <div class="kv"><div><b>ISBN / ISSN</b></div><div id="b_codes">—</div></div>
+        <div class="kv"><div><b>Status</b></div><div id="b_status">—</div></div>
+        <div class="kv"><div><b>Book ID</b></div><div id="b_id">—</div></div>
+      </div>
+    </section>
+
+    <section class="card">
+      <h2>Istoric evenimente</h2>
+      <div class="row">
+        <select id="typeFilter">
+          <option value="">Tip: toate</option>
+          <option value="create">create</option>
+          <option value="update">update</option>
+          <option value="delete">delete</option>
+          <option value="restore">restore</option>
+          <option value="request">request</option>
+          <option value="approve">approve</option>
+          <option value="reject">reject</option>
+          <option value="markBorrowed">markBorrowed</option>
+          <option value="requestReturn">requestReturn</option>
+          <option value="confirmReturn">confirmReturn</option>
+        </select>
+        <button id="btnRefresh" class="ghost">Reîncarcă</button>
+        <button id="btnExportJson" class="ghost">Export JSON</button>
+        <button id="btnExportCsv" class="ghost">Export CSV</button>
+      </div>
+      <div id="histMsg" class="msg" hidden></div>
+      <div id="timeline" class="timeline"></div>
+    </section>
+  </div>
+
+  <script>
+    const UI_VERSION = '0.1.0';
+    const PAGE_LIMIT = 200; // pentru căutarea unui singur bookId e ok să folosim batch-uri mai mari
+
+    const LS_KEYS = {
+      url:'BPT_SCRIPT_URL',
+      secret:'BPT_SECRET',
+      activeLib:'BPT_ACTIVE_LIBRARY_ID'
+    };
+
+    const els = {
+      uiVersion: document.getElementById('uiVersion'),
+      cfgBadge: document.getElementById('cfgBadge'),
+      cfgText: document.getElementById('cfgText'),
+
+      libraryId: document.getElementById('libraryId'),
+      bookId: document.getElementById('bookId'),
+      btnLoad: document.getElementById('btnLoad'),
+      btnCopyIds: document.getElementById('btnCopyIds'),
+      topMsg: document.getElementById('topMsg'),
+
+      b_title: document.getElementById('b_title'),
+      b_authors: document.getElementById('b_authors'),
+      b_publisher: document.getElementById('b_publisher'),
+      b_year: document.getElementById('b_year'),
+      b_codes: document.getElementById('b_codes'),
+      b_status: document.getElementById('b_status'),
+      b_id: document.getElementById('b_id'),
+
+      typeFilter: document.getElementById('typeFilter'),
+      btnRefresh: document.getElementById('btnRefresh'),
+      btnExportJson: document.getElementById('btnExportJson'),
+      btnExportCsv: document.getElementById('btnExportCsv'),
+      histMsg: document.getElementById('histMsg'),
+      timeline: document.getElementById('timeline'),
+    };
+
+    els.uiVersion.textContent = `UI v${UI_VERSION}`;
+
+    function setBadge(state, text){
+      els.cfgBadge.classList.remove('ok','err');
+      if(state==='ok') els.cfgBadge.classList.add('ok');
+      if(state==='err') els.cfgBadge.classList.add('err');
+      els.cfgText.textContent = text;
+    }
+    function showMsg(el, kind, text){
+      el.hidden = false; el.classList.remove('ok','err');
+      if(kind) el.classList.add(kind);
+      el.textContent = text;
+    }
+    function clearMsg(el){ el.hidden = true; el.textContent=''; el.classList.remove('ok','err'); }
+
+    function cfg(){
+      return {
+        url: localStorage.getItem(LS_KEYS.url)||'',
+        secret: localStorage.getItem(LS_KEYS.secret)||'',
+        activeLib: localStorage.getItem(LS_KEYS.activeLib)||'',
+      };
+    }
+    async function apiCall(op, params={}){
+      const c = cfg();
+      if(!c.url || !c.secret) throw new Error('config_missing');
+      const res = await fetch(c.url,{
+        method:'POST',
+        headers:{'Content-Type':'application/json'},
+        body: JSON.stringify({ token: c.secret, op, params })
+      });
+      const data = await res.json().catch(()=> ({}));
+      if(!data || data.ok!==true){
+        const code = data && data.error ? data.error : 'unknown_error';
+        const err = new Error(code);
+        err._server = data;
+        throw err;
+      }
+      return data.data;
+    }
+
+    // ——— Utils
+    function qs(name){
+      const url = new URL(window.location.href);
+      return url.searchParams.get(name) || '';
+    }
+    function setBookHeader(b){
+      els.b_title.textContent = b?.title || '—';
+      els.b_authors.textContent = b?.authors || '—';
+      els.b_publisher.textContent = b?.publisher || '—';
+      els.b_year.textContent = b?.year || '—';
+      const codes = [b?.ISBN||'', b?.ISSN||''].filter(Boolean).join(' / ');
+      els.b_codes.textContent = codes || '—';
+      els.b_status.textContent = b?.status || '—';
+      els.b_id.textContent = b?.bookId || '—';
+    }
+    function prettyPayload(p){
+      if(!p) return '';
+      try{
+        // p poate fi deja string JSON
+        const obj = typeof p === 'string' ? JSON.parse(p) : p;
+        return JSON.stringify(obj, null, 2);
+      }catch(e){
+        return String(p);
+      }
+    }
+    function download(filename, text, type='text/plain'){
+      const blob = new Blob([text], {type});
+      const a = document.createElement('a');
+      a.href = URL.createObjectURL(blob);
+      a.download = filename;
+      a.click();
+      URL.revokeObjectURL(a.href);
+    }
+
+    // ——— Loaders
+    async function loadBookDetails(libraryId, bookId){
+      // Nu avem un endpoint de "get by id"; parcurgem cu cursor până găsim.
+      let cursor = 0;
+      for(;;){
+        const data = await apiCall('books.list', { libraryId, limit: PAGE_LIMIT, cursor, status: undefined, query: '' });
+        const items = data.items || [];
+        const found = items.find(r => String(r.bookId) === String(bookId));
+        if(found) return found;
+        if(data.nextCursor === null || data.nextCursor === undefined) break;
+        cursor = data.nextCursor;
+      }
+      return null;
+    }
+
+    async function loadHistory(libraryId, bookId){
+      clearMsg(els.histMsg);
+      try{
+        const data = await apiCall('events.bookHistory', { libraryId, bookId });
+        const evs = (data.events || []).slice().sort((a,b)=> String(a.timestamp||'').localeCompare(String(b.timestamp||'')));
+        renderTimeline(evs);
+        if(evs.length===0){
+          showMsg(els.histMsg, '', 'Nu există evenimente pentru acest volum.');
+        }
+      }catch(e){
+        showMsg(els.histMsg, 'err', 'Eroare la încărcarea istoricului: ' + e.message);
+      }
+    }
+
+    // ——— Renderers
+    let lastEvents = [];
+    function renderTimeline(events){
+      lastEvents = events;
+      const typeFilter = els.typeFilter.value;
+      const filtered = events.filter(e => !typeFilter || String(e.type)===typeFilter);
+      els.timeline.innerHTML = '';
+      if(filtered.length===0){
+        els.timeline.innerHTML = '<div class="msg">Nimic de afișat pentru filtrul curent.</div>';
+        return;
+      }
+      for(const e of filtered){
+        const div = document.createElement('div');
+        div.className = 'ev';
+        const t = new Date(e.timestamp || Date.now());
+        div.innerHTML = `
+          <div class="meta">
+            <div><b>${t.toLocaleString()}</b></div>
+            <div>ID: <code>${e.eventId || '—'}</code></div>
+          </div>
+          <div>
+            <div class="type">${e.type || ''}</div>
+            <div>Actor: <code>${e.actorUser || ''}</code></div>
+            <div style="margin-top:6px"><small>Payload</small></div>
+            <code>${escapeHtml(prettyPayload(e.payload))}</code>
+          </div>
+        `;
+        els.timeline.appendChild(div);
+      }
+    }
+    function escapeHtml(str){
+      return String(str).replace(/[&<>"']/g, s => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[s]));
+    }
+
+    // ——— Actions
+    els.btnLoad.addEventListener('click', async ()=>{
+      clearMsg(els.topMsg);
+      const lib = (els.libraryId.value.trim() || cfg().activeLib);
+      const bid = els.bookId.value.trim();
+      if(!lib || !bid){
+        showMsg(els.topMsg, 'err', 'Completează libraryId și bookId (sau setează biblioteca activă din Hub).');
+        return;
+      }
+      await bootstrap(lib, bid);
+    });
+
+    els.btnCopyIds.addEventListener('click', async ()=>{
+      const txt = `libraryId=${els.libraryId.value.trim() || cfg().activeLib}\nbookId=${els.bookId.value.trim()}`;
+      try{
+        await navigator.clipboard.writeText(txt);
+        showMsg(els.topMsg, 'ok', 'IDs copiate în clipboard.');
+      }catch(e){
+        showMsg(els.topMsg, '', 'Nu am putut copia automat. Selectează manual: ' + txt);
+      }
+    });
+
+    els.typeFilter.addEventListener('change', ()=>{
+      renderTimeline(lastEvents);
+    });
+
+    els.btnRefresh.addEventListener('click', async ()=>{
+      const lib = (els.libraryId.value.trim() || cfg().activeLib);
+      const bid = els.bookId.value.trim();
+      if(!lib || !bid) return;
+      await loadHistory(lib, bid);
+    });
+
+    els.btnExportJson.addEventListener('click', ()=>{
+      const lib = (els.libraryId.value.trim() || cfg().activeLib) || 'lib';
+      const bid = els.bookId.value.trim() || 'book';
+      const out = JSON.stringify(lastEvents, null, 2);
+      download(`history_${lib}_${bid}.json`, out, 'application/json');
+    });
+
+    els.btnExportCsv.addEventListener('click', ()=>{
+      const lib = (els.libraryId.value.trim() || cfg().activeLib) || 'lib';
+      const bid = els.bookId.value.trim() || 'book';
+      const header = ['eventId','type','actorUser','timestamp','payload'];
+      const rows = lastEvents.map(e => [
+        e.eventId || '', e.type || '', e.actorUser || '', e.timestamp || '', (typeof e.payload === 'string' ? e.payload : JSON.stringify(e.payload || {}))
+      ]);
+      const csv = [header].concat(rows).map(r => r.map(v => `"${String(v).replace(/"/g,'""')}"`).join(',')).join('\r\n');
+      download(`history_${lib}_${bid}.csv`, csv, 'text/csv;charset=utf-8;');
+    });
+
+    // ——— Bootstrap
+    async function bootstrap(libId, bookId){
+      // Status badge
+      setBadge('ok', 'Config OK');
+      // Completează input-urile dacă lipsesc
+      els.libraryId.value = libId || '';
+      els.bookId.value = bookId || '';
+
+      // Detalii carte (best-effort)
+      try{
+        const b = await loadBookDetails(libId, bookId);
+        if(b){
+          setBookHeader(b);
+        }else{
+          setBookHeader({ bookId: bookId });
+          showMsg(els.topMsg, '', 'Nu am găsit detalii locale despre carte (dar istoricul se poate încărca).');
+        }
+      }catch(e){
+        showMsg(els.topMsg, '', 'Nu am putut încărca detaliile cărții: ' + e.message);
+      }
+
+      // Istoric
+      await loadHistory(libId, bookId);
+    }
+
+    // ——— Init on load
+    (function init(){
+      // Config
+      const c = cfg();
+      const ok = !!(c.url && c.secret);
+      setBadge(ok ? 'ok' : 'err', ok ? 'Config OK' : 'Config nevalidat');
+
+      // Query params
+      const qLib = qs('libraryId');
+      const qBook = qs('bookId');
+
+      if(ok && (qLib || c.activeLib) && qBook){
+        els.libraryId.value = qLib || c.activeLib;
+        els.bookId.value = qBook;
+        bootstrap(els.libraryId.value.trim(), els.bookId.value.trim());
+      } else {
+        // completează libraryId din activă, dacă există
+        if(c.activeLib) els.libraryId.value = c.activeLib;
+        showMsg(els.topMsg, '', 'Completează câmpurile și apasă „Încarcă istoric”. Poți ajunge aici și din Catalog (butonul „Istoric”).');
+      }
+    })();
+  </script>
+</body>
+</html>
