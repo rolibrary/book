@@ -1,0 +1,292 @@
+<!DOCTYPE html>
+<html lang="ro">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Biblioteca pentru toți — Hub</title>
+  <meta name="description" content="Hub aplicație: versiune, status, selectare bibliotecă, navigare." />
+  <style>
+    :root {
+      --bg: #0f172a;          /* slate-900 */
+      --fg: #e2e8f0;          /* slate-200 */
+      --muted: #94a3b8;       /* slate-400 */
+      --card: #111827;        /* gray-900 */
+      --accent: #22c55e;      /* green-500 */
+      --accent-2: #3b82f6;    /* blue-500 */
+      --warn: #f59e0b;        /* amber-500 */
+      --danger: #ef4444;      /* red-500 */
+      --border: #1f2937;      /* gray-800 */
+    }
+    * { box-sizing: border-box; }
+    html, body { margin: 0; height: 100%; background: var(--bg); color: var(--fg); font-family: system-ui, -apple-system, Segoe UI, Roboto, Ubuntu, Cantarell, Noto Sans, Arial, "Apple Color Emoji", "Segoe UI Emoji"; }
+    a { color: var(--accent-2); text-decoration: none; }
+    a:hover { text-decoration: underline; }
+    .container { max-width: 920px; margin: 0 auto; padding: 24px; }
+    header { display: flex; gap: 16px; align-items: center; justify-content: space-between; margin-bottom: 16px; }
+    .title { font-size: 1.25rem; font-weight: 600; letter-spacing: .2px; }
+    .badge { display: inline-flex; align-items: center; gap: 8px; border: 1px solid var(--border); background: var(--card); padding: 6px 10px; border-radius: 999px; font-size: .85rem; color: var(--muted); }
+    .badge .dot { width: 8px; height: 8px; border-radius: 999px; background: var(--warn); }
+    .badge.ok .dot { background: var(--accent); }
+    .badge.err .dot { background: var(--danger); }
+    .card { border: 1px solid var(--border); background: var(--card); border-radius: 14px; padding: 18px; margin-top: 16px; }
+    .card h2 { margin: 0 0 12px; font-size: 1.05rem; color: var(--fg); }
+    .row { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+    @media (max-width: 720px) { .row { grid-template-columns: 1fr; } }
+    .kv { display: grid; grid-template-columns: 160px 1fr; gap: 10px; margin: 6px 0; color: var(--muted); }
+    .kv b { color: var(--fg); font-weight: 600; }
+    select, button, input[type="text"] {
+      width: 100%; padding: 10px 12px; border-radius: 10px; border: 1px solid var(--border);
+      background: #0b1220; color: var(--fg); outline: none; font-size: 0.95rem;
+    }
+    button { cursor: pointer; border: 1px solid var(--border); background: #0a0f1e; }
+    button.primary { background: var(--accent-2); border-color: var(--accent-2); color: white; }
+    button.ghost { background: transparent; }
+    button:disabled { opacity: 0.6; cursor: not-allowed; }
+    .actions { display: flex; gap: 10px; flex-wrap: wrap; }
+    .msg { margin-top: 10px; padding: 10px 12px; border-radius: 10px; background: #0b1220; border: 1px solid var(--border); color: var(--muted); }
+    .msg.ok { color: #c8facc; border-color: #134e26; background: #07140d; }
+    .msg.err { color: #fecaca; border-color: #4c1d1d; background: #140707; }
+    footer { margin: 28px 0; color: var(--muted); font-size: .9rem; display: flex; justify-content: space-between; flex-wrap: wrap; gap: 10px; }
+    .nav { display: flex; gap: 10px; flex-wrap: wrap; }
+    .pill { padding: 8px 12px; border: 1px solid var(--border); background: #0b1220; border-radius: 999px; }
+    .sr { position: absolute; left: -9999px; }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <header>
+      <div class="title">📚 Biblioteca pentru toți — <span id="uiVersion"></span></div>
+      <div class="badge" id="cfgBadge" title="Status configurare">
+        <span class="dot"></span><span id="cfgText">Config verificare…</span>
+      </div>
+    </header>
+
+    <div class="row">
+      <section class="card" aria-labelledby="sec-status">
+        <h2 id="sec-status">Stare & versiuni</h2>
+        <div class="kv"><span>Config (local):</span><b id="cfgSummary">—</b></div>
+        <div class="kv"><span>Backend URL:</span><b id="cfgUrl">—</b></div>
+        <div class="kv"><span>Backend versiune:</span><b id="apiVersion">—</b></div>
+        <div class="kv"><span>Ultimul test:</span><b id="apiPingAt">—</b></div>
+        <div class="actions">
+          <button id="btnTest" class="primary">Verifică backend (app.info)</button>
+          <a class="pill" href="settings.html">Deschide Setări</a>
+        </div>
+        <div class="msg" id="statusMsg" hidden></div>
+      </section>
+
+      <section class="card" aria-labelledby="sec-lib">
+        <h2 id="sec-lib">Bibliotecă activă</h2>
+        <label class="sr" for="librarySelect">Selectează bibliotecă</label>
+        <select id="librarySelect" disabled>
+          <option value="">— Încarc bibliotecile… —</option>
+        </select>
+        <div class="kv"><span>Dreptul tău:</span><b id="libPerm">—</b></div>
+        <div class="kv"><span>Vizibilitate:</span><b id="libVis">—</b></div>
+        <div class="actions">
+          <button id="btnOpenCatalog" disabled>Deschide catalog</button>
+          <button id="btnOpenAdd" disabled>Adaugă carte</button>
+        </div>
+      </section>
+    </div>
+
+    <section class="card" aria-labelledby="sec-nav">
+      <h2 id="sec-nav">Navigare rapidă</h2>
+      <div class="nav">
+        <a class="pill" href="catalog.html">Catalog</a>
+        <a class="pill" href="add.html">Adăugare carte</a>
+        <a class="pill" href="settings.html">Setări</a>
+        <a class="pill" href="libraries.html">Bibliotecile mele</a>
+        <a class="pill" href="collections.html">Colecții</a>
+      </div>
+    </section>
+
+    <footer>
+      <div>© <span id="year"></span> Biblioteca pentru toți</div>
+      <div>UI construit pentru Google Apps Script backend</div>
+    </footer>
+  </div>
+
+  <script>
+    // —— Config UI ——
+    const UI_VERSION = '0.1.0';
+    const LS_KEYS = {
+      url: 'BPT_SCRIPT_URL',
+      secret: 'BPT_SECRET',
+      deviceId: 'BPT_DEVICE_ID',
+      email: 'BPT_EMAIL',
+      phone: 'BPT_PHONE',
+      activeLib: 'BPT_ACTIVE_LIBRARY_ID'
+    };
+
+    const els = {
+      uiVersion: document.getElementById('uiVersion'),
+      cfgBadge: document.getElementById('cfgBadge'),
+      cfgText: document.getElementById('cfgText'),
+      cfgSummary: document.getElementById('cfgSummary'),
+      cfgUrl: document.getElementById('cfgUrl'),
+      apiVersion: document.getElementById('apiVersion'),
+      apiPingAt: document.getElementById('apiPingAt'),
+      statusMsg: document.getElementById('statusMsg'),
+      btnTest: document.getElementById('btnTest'),
+      librarySelect: document.getElementById('librarySelect'),
+      libPerm: document.getElementById('libPerm'),
+      libVis: document.getElementById('libVis'),
+      btnOpenCatalog: document.getElementById('btnOpenCatalog'),
+      btnOpenAdd: document.getElementById('btnOpenAdd'),
+      year: document.getElementById('year'),
+    };
+
+    els.uiVersion.textContent = `UI v${UI_VERSION}`;
+    els.year.textContent = new Date().getFullYear();
+
+    function getCfg() {
+      return {
+        url: localStorage.getItem(LS_KEYS.url) || '',
+        secret: localStorage.getItem(LS_KEYS.secret) || '',
+        deviceId: localStorage.getItem(LS_KEYS.deviceId) || '',
+        email: localStorage.getItem(LS_KEYS.email) || '',
+        phone: localStorage.getItem(LS_KEYS.phone) || '',
+        activeLib: localStorage.getItem(LS_KEYS.activeLib) || ''
+      };
+    }
+    function setBadge(state, text) {
+      els.cfgBadge.classList.remove('ok','err');
+      if (state === 'ok') els.cfgBadge.classList.add('ok');
+      if (state === 'err') els.cfgBadge.classList.add('err');
+      els.cfgText.textContent = text;
+    }
+    function showMsg(kind, text) {
+      els.statusMsg.hidden = false;
+      els.statusMsg.classList.remove('ok','err');
+      if (kind) els.statusMsg.classList.add(kind);
+      els.statusMsg.textContent = text;
+    }
+    function clearMsg() {
+      els.statusMsg.hidden = true;
+      els.statusMsg.textContent = '';
+      els.statusMsg.classList.remove('ok','err');
+    }
+
+    async function apiCall(op, params = {}) {
+      const cfg = getCfg();
+      if (!cfg.url || !cfg.secret) throw new Error('config_missing');
+      const res = await fetch(cfg.url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ token: cfg.secret, op, params })
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!data || data.ok !== true) {
+        const code = data && data.error ? data.error : 'unknown_error';
+        const err = new Error(code);
+        err._server = data;
+        throw err;
+      }
+      return data.data;
+    }
+
+    async function init() {
+      const cfg = getCfg();
+      els.cfgUrl.textContent = cfg.url || '—';
+      const hasCfg = !!(cfg.url && cfg.secret);
+      els.cfgSummary.textContent = hasCfg ? 'OK (URL + Secret setate)' : 'Config lipsă (vezi Setări)';
+      setBadge(hasCfg ? 'ok' : '', hasCfg ? 'Config OK' : 'Config lipsă');
+
+      els.btnTest.disabled = !hasCfg;
+      els.librarySelect.disabled = true;
+      els.btnOpenCatalog.disabled = true;
+      els.btnOpenAdd.disabled = true;
+
+      if (!hasCfg) return;
+
+      try {
+        // app.info
+        const info = await apiCall('app.info');
+        els.apiVersion.textContent = info.version || '—';
+        els.apiPingAt.textContent = new Date().toLocaleString();
+        showMsg('ok', 'Conexiune backend OK');
+        setBadge('ok', 'Conectat');
+      } catch (e) {
+        setBadge('err', 'Eroare backend');
+        showMsg('err', `Eroare la test: ${e.message}`);
+        return;
+      }
+
+      // Load libraries
+      try {
+        const data = await apiCall('libs.list');
+        const libs = data.libraries || [];
+        const sel = els.librarySelect;
+        sel.innerHTML = '';
+        if (libs.length === 0) {
+          sel.innerHTML = '<option value="">(Nu ai biblioteci disponibile)</option>';
+          sel.disabled = true;
+        } else {
+          // sort by name
+          libs.sort((a,b) => String(a.name||'').localeCompare(String(b.name||''), 'ro'));
+          for (const lib of libs) {
+            const opt = document.createElement('option');
+            opt.value = lib.libraryId;
+            opt.textContent = `${lib.name} — ${lib.permission}`;
+            opt.dataset.permission = lib.permission || '';
+            opt.dataset.visibility = lib.visibility || '';
+            sel.appendChild(opt);
+          }
+          sel.disabled = false;
+          // restore selection if exists
+          if (cfg.activeLib && libs.some(l => l.libraryId === cfg.activeLib)) {
+            sel.value = cfg.activeLib;
+          } else {
+            sel.selectedIndex = 0;
+          }
+          onLibraryChange();
+        }
+      } catch (e) {
+        setBadge('err', 'Eroare la listele de biblioteci');
+        showMsg('err', `Nu pot încărca bibliotecile: ${e.message}`);
+      }
+    }
+
+    function onLibraryChange() {
+      const sel = els.librarySelect;
+      const val = sel.value;
+      localStorage.setItem(LS_KEYS.activeLib, val || '');
+      const opt = sel.options[sel.selectedIndex];
+      const perm = opt?.dataset?.permission || '—';
+      const vis = opt?.dataset?.visibility || '—';
+      els.libPerm.textContent = perm;
+      els.libVis.textContent = vis;
+      const enabled = !!val;
+      els.btnOpenCatalog.disabled = !enabled;
+      els.btnOpenAdd.disabled = !enabled;
+    }
+
+    els.librarySelect.addEventListener('change', onLibraryChange);
+    els.btnTest.addEventListener('click', async () => {
+      clearMsg();
+      try {
+        const info = await apiCall('app.info');
+        els.apiVersion.textContent = info.version || '—';
+        els.apiPingAt.textContent = new Date().toLocaleString();
+        showMsg('ok', 'Conexiune backend OK');
+        setBadge('ok', 'Conectat');
+      } catch (e) {
+        setBadge('err', 'Eroare backend');
+        showMsg('err', `Eroare la test: ${e.message}`);
+      }
+    });
+    els.btnOpenCatalog.addEventListener('click', () => {
+      if (!els.librarySelect.value) return;
+      window.location.href = `catalog.html`;
+    });
+    els.btnOpenAdd.addEventListener('click', () => {
+      if (!els.librarySelect.value) return;
+      window.location.href = `add.html`;
+    });
+
+    // start
+    init();
+  </script>
+</body>
+</html>
