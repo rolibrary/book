@@ -1,0 +1,401 @@
+<!DOCTYPE html>
+<html lang="ro">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Colecții — Biblioteca pentru toți</title>
+  <meta name="description" content="Listează colecții, înscriere, părăsire și atașează/detașează bibliotecile tale la colecții." />
+  <style>
+    :root{
+      --bg:#0f172a;--fg:#e2e8f0;--muted:#94a3b8;--card:#111827;--border:#1f2937;
+      --accent:#22c55e;--accent2:#3b82f6;--danger:#ef4444;--warn:#f59e0b
+    }
+    *{box-sizing:border-box}
+    html,body{margin:0;height:100%;background:var(--bg);color:var(--fg);font-family:system-ui,-apple-system,Segoe UI,Roboto,Ubuntu,Cantarell,Noto Sans,Arial}
+    a{color:var(--accent2);text-decoration:none} a:hover{text-decoration:underline}
+    .container{max-width:1100px;margin:0 auto;padding:24px}
+    header{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:18px}
+    .title{font-weight:600;letter-spacing:.2px}
+    .badge{display:inline-flex;align-items:center;gap:8px;border:1px solid var(--border);background:var(--card);padding:6px 10px;border-radius:999px;font-size:.85rem;color:var(--muted)}
+    .badge .dot{width:8px;height:8px;border-radius:999px;background:var(--warn)}
+    .badge.ok .dot{background:var(--accent)} .badge.err .dot{background:var(--danger)}
+
+    .card{border:1px solid var(--border);background:var(--card);border-radius:14px;padding:16px;margin-top:14px}
+    .card h2{margin:0 0 10px;font-size:1.05rem}
+    .row{display:flex;gap:10px;align-items:center;flex-wrap:wrap}
+    .grid{display:grid;grid-template-columns:1fr 1fr;gap:16px}
+    @media (max-width:900px){.grid{grid-template-columns:1fr}}
+    input,select,button,textarea{width:100%;padding:10px 12px;border-radius:10px;border:1px solid var(--border);background:#0b1220;color:var(--fg);font-size:.95rem;outline:none}
+    textarea{min-height:90px;resize:vertical}
+    button{cursor:pointer;background:#0a0f1e}
+    button.primary{background:var(--accent2);border-color:var(--accent2);color:#fff}
+    button.ghost{background:transparent}
+    button.warn{background:#231a0a;border-color:#3b2a0b}
+    button.danger{background:#1f0a0a;border-color:#3a1111}
+    button:disabled{opacity:.6;cursor:not-allowed}
+    .hint{font-size:.9rem;color:var(--muted)}
+    .msg{margin-top:12px;padding:10px 12px;border-radius:10px;background:#0b1220;border:1px solid var(--border);color:var(--muted)}
+    .msg.ok{color:#c8facc;border-color:#134e26;background:#07140d}
+    .msg.err{color:#fecaca;border-color:#4c1d1d;background:#140707}
+
+    .pill{padding:8px 12px;border:1px solid var(--border);background:#0b1220;border-radius:999px}
+    .cols{display:grid;grid-template-columns:1.1fr .9fr;gap:16px}
+    @media (max-width:1000px){.cols{grid-template-columns:1fr}}
+    .libList{border:1px solid var(--border);border-radius:12px;padding:10px;background:#0b1220;max-height:260px;overflow:auto}
+    .libItem{display:flex;align-items:center;gap:8px;padding:6px 4px;border-bottom:1px solid #0f1a2a}
+    .libItem:last-child{border-bottom:none}
+    .libItem code{opacity:.8}
+
+    .colCard{border:1px solid var(--border);border-radius:12px;padding:12px;margin-top:12px;background:#0b1220}
+    .colHead{display:flex;justify-content:space-between;gap:10px;align-items:center}
+    .colTitle{font-weight:600}
+    .chips{display:flex;gap:8px;flex-wrap:wrap}
+    .sr{position:absolute;left:-9999px}
+  </style>
+</head>
+<body>
+  <div class="container">
+    <header>
+      <div class="title">🗂️ Colecții — <span id="uiVersion"></span></div>
+      <div class="badge" id="cfgBadge"><span class="dot"></span><span id="cfgText">Config nevalidat</span></div>
+    </header>
+
+    <section class="card">
+      <h2>Bibliotecile tale (owner) — pentru atașare la colecții</h2>
+      <div class="hint">Selectează bibliotecile pe care vrei să le atașezi/detașezi la colecțiile în care ești owner.</div>
+      <div id="libsOwned" class="libList"></div>
+      <div class="row" style="margin-top:8px">
+        <button id="selectAll" class="ghost">Selectează toate</button>
+        <button id="clearSel" class="ghost">Golește selecția</button>
+        <a class="pill" href="libraries.html">🔧 Administrează biblioteci</a>
+        <a class="pill" href="index.html">⟵ Înapoi la Hub</a>
+      </div>
+    </section>
+
+    <section class="card">
+      <h2>Înscriere într-o colecție (după ID)</h2>
+      <div class="grid">
+        <div>
+          <label class="sr" for="joinId">Collection ID</label>
+          <input id="joinId" type="text" placeholder="ex: 7b9d3c2d-..." />
+        </div>
+        <div>
+          <button id="btnJoin" class="primary">Înscrie-mă</button>
+        </div>
+      </div>
+      <div id="joinMsg" class="msg" hidden></div>
+    </section>
+
+    <section class="card">
+      <h2>Colecțiile mele</h2>
+      <div class="row">
+        <span class="hint">Mai jos sunt colecțiile returnate de backend (acolo unde ești owner sau membru).</span>
+        <button id="refresh" class="ghost">Reîncarcă</button>
+      </div>
+      <div id="colsWrap"></div>
+      <div id="listMsg" class="msg" hidden></div>
+    </section>
+
+    <section class="card">
+      <h2>(Opțional) Creează colecție</h2>
+      <div class="grid">
+        <div>
+          <label class="sr" for="newName">Nume</label>
+          <input id="newName" type="text" placeholder="Ex: Colecția cartierului" />
+        </div>
+        <div>
+          <label class="sr" for="newDesc">Descriere</label>
+          <input id="newDesc" type="text" placeholder="Scurtă descriere" />
+        </div>
+      </div>
+      <div class="row" style="margin-top:8px">
+        <button id="btnCreate" class="primary">Creează</button>
+        <span class="hint">Necesită suport backend (admin.createCollection).</span>
+      </div>
+      <div id="createMsg" class="msg" hidden></div>
+    </section>
+  </div>
+
+  <script>
+    const UI_VERSION = '0.1.0';
+    const LS_KEYS = {
+      url:'BPT_SCRIPT_URL',
+      secret:'BPT_SECRET'
+    };
+
+    const els = {
+      uiVersion: document.getElementById('uiVersion'),
+      cfgBadge: document.getElementById('cfgBadge'),
+      cfgText: document.getElementById('cfgText'),
+
+      libsOwned: document.getElementById('libsOwned'),
+      selectAll: document.getElementById('selectAll'),
+      clearSel: document.getElementById('clearSel'),
+
+      joinId: document.getElementById('joinId'),
+      btnJoin: document.getElementById('btnJoin'),
+      joinMsg: document.getElementById('joinMsg'),
+
+      colsWrap: document.getElementById('colsWrap'),
+      listMsg: document.getElementById('listMsg'),
+      refresh: document.getElementById('refresh'),
+
+      newName: document.getElementById('newName'),
+      newDesc: document.getElementById('newDesc'),
+      btnCreate: document.getElementById('btnCreate'),
+      createMsg: document.getElementById('createMsg'),
+    };
+
+    els.uiVersion.textContent = `UI v${UI_VERSION}`;
+
+    function setBadge(state, text){
+      els.cfgBadge.classList.remove('ok','err');
+      if(state==='ok') els.cfgBadge.classList.add('ok');
+      if(state==='err') els.cfgBadge.classList.add('err');
+      els.cfgText.textContent = text;
+    }
+    function showMsg(el, kind, text){
+      el.hidden = false; el.classList.remove('ok','err');
+      if(kind) el.classList.add(kind);
+      el.textContent = text;
+    }
+    function clearMsg(el){ el.hidden = true; el.textContent=''; el.classList.remove('ok','err'); }
+
+    function cfg(){
+      return {
+        url: localStorage.getItem(LS_KEYS.url)||'',
+        secret: localStorage.getItem(LS_KEYS.secret)||'',
+      };
+    }
+    async function apiCall(op, params={}){
+      const c = cfg();
+      if(!c.url || !c.secret) throw new Error('config_missing');
+      const res = await fetch(c.url,{
+        method:'POST',
+        headers:{'Content-Type':'application/json'},
+        body: JSON.stringify({ token: c.secret, op, params })
+      });
+      const data = await res.json().catch(()=> ({}));
+      if(!data || data.ok!==true){
+        const code = data && data.error ? data.error : 'unknown_error';
+        const err = new Error(code);
+        err._server = data;
+        throw err;
+      }
+      return data.data;
+    }
+
+    // —— Biblioteci deținute (owner) — selecție globală pentru attach/detach
+    let ownedLibs = []; // [{libraryId,name}, ...]
+    function renderOwnedLibs(){
+      els.libsOwned.innerHTML = '';
+      if(ownedLibs.length===0){
+        els.libsOwned.innerHTML = '<div class="hint" style="padding:6px">Nu ești owner pe nicio bibliotecă (sau backend nu a returnat).</div>';
+        return;
+      }
+      for(const lib of ownedLibs){
+        const row = document.createElement('div');
+        row.className = 'libItem';
+        row.innerHTML = `
+          <label class="row"><input type="checkbox" class="libCb" data-id="${lib.libraryId}"/> ${lib.name} <code>${lib.libraryId}</code></label>
+        `;
+        els.libsOwned.appendChild(row);
+      }
+    }
+    function selectedOwnedLibIds(){
+      return Array.from(document.querySelectorAll('.libCb:checked')).map(cb => cb.dataset.id);
+    }
+
+    // —— Colecții
+    let collections = []; // Array of objects from backend
+
+    function renderCollections(){
+      els.colsWrap.innerHTML = '';
+      if(collections.length===0){
+        els.colsWrap.innerHTML = '<div class="hint">Nu ai nicio colecție în listă (încearcă Join după ID sau verifică backend-ul).</div>';
+        return;
+      }
+      for(const c of collections){
+        els.colsWrap.appendChild(renderCollectionCard(c));
+      }
+    }
+
+    function renderCollectionCard(col){
+      const div = document.createElement('div');
+      div.className = 'colCard';
+      div.dataset.id = col.collectionId;
+
+      const head = document.createElement('div');
+      head.className = 'colHead';
+
+      const title = document.createElement('div');
+      title.className = 'colTitle';
+      title.textContent = `${col.name || '(fără nume)'}`;
+      head.appendChild(title);
+
+      const chips = document.createElement('div');
+      chips.className = 'chips';
+      const chipId = document.createElement('span'); chipId.className = 'pill'; chipId.textContent = (col.collectionId || '—');
+      const chipRole = document.createElement('span'); chipRole.className = 'pill'; chipRole.textContent = 'rol: ' + (col.role || '—');
+      chips.appendChild(chipId); chips.appendChild(chipRole);
+
+      head.appendChild(chips);
+      div.appendChild(head);
+
+      const body = document.createElement('div');
+      body.className = 'grid';
+      // Col stânga: descriere + acțiuni membership
+      const left = document.createElement('div');
+      left.innerHTML = `
+        <div class="hint">${col.description || ''}</div>
+        <div class="row" style="margin-top:8px">
+          <button class="ghost" data-act="leave">Părăsește colecția</button>
+        </div>
+      `;
+      const btnLeave = left.querySelector('button[data-act="leave"]');
+      if(col.role && col.role.toLowerCase()==='owner'){
+        // owner de obicei nu "părăsește" — dar lăsăm butonul să încerce; backend poate răspunde forbidden
+        btnLeave.textContent = 'Părăsește (poate eșua pentru owner)';
+      }
+      btnLeave.addEventListener('click', async ()=>{
+        try{
+          await apiCall('collections.leave', { collectionId: col.collectionId });
+          showMsg(els.listMsg,'ok','Ai părăsit colecția.');
+          await loadAll();
+        }catch(e){
+          showMsg(els.listMsg,'err','Eroare la părăsire: ' + e.message);
+        }
+      });
+
+      // Col dreapta: attach/detach biblioteci
+      const right = document.createElement('div');
+      right.innerHTML = `
+        <div class="hint">Atașează / detașează bibliotecile selectate mai sus (din lista „Bibliotecile tale”).</div>
+        <div class="row" style="margin-top:8px">
+          <button class="primary" data-act="attach">Atașează selecția</button>
+          <button class="warn" data-act="detach">Detașează selecția</button>
+        </div>
+      `;
+      const btnAttach = right.querySelector('button[data-act="attach"]');
+      const btnDetach = right.querySelector('button[data-act="detach"]');
+
+      btnAttach.addEventListener('click', async ()=>{
+        const ids = selectedOwnedLibIds();
+        if(ids.length===0){ showMsg(els.listMsg,'', 'Selectează întâi bibliotecile de atașat.'); return; }
+        let ok=0, fail=0;
+        for(const id of ids){
+          try{
+            await apiCall('collections.addLibrary', { collectionId: col.collectionId, libraryId: id });
+            ok++;
+          }catch(e){ fail++; }
+        }
+        showMsg(els.listMsg, fail? 'err':'ok', `Atașare: OK=${ok}, erori=${fail}.`);
+      });
+      btnDetach.addEventListener('click', async ()=>{
+        const ids = selectedOwnedLibIds();
+        if(ids.length===0){ showMsg(els.listMsg,'', 'Selectează întâi bibliotecile de detașat.'); return; }
+        let ok=0, fail=0;
+        for(const id of ids){
+          try{
+            await apiCall('collections.removeLibrary', { collectionId: col.collectionId, libraryId: id });
+            ok++;
+          }catch(e){ fail++; }
+        }
+        showMsg(els.listMsg, fail? 'err':'ok', `Detașare: OK=${ok}, erori=${fail}.`);
+      });
+
+      body.appendChild(left);
+      body.appendChild(right);
+      div.appendChild(body);
+      return div;
+    }
+
+    // —— Loaders
+    async function loadOwnedLibs(){
+      ownedLibs = [];
+      els.libsOwned.innerHTML = '<div class="hint" style="padding:6px">Se încarcă bibliotecile…</div>';
+      try{
+        const data = await apiCall('libs.list');
+        const all = data.libraries || [];
+        ownedLibs = all.filter(x => String(x.permission).toLowerCase()==='owner')
+                       .map(x => ({ libraryId: x.libraryId, name: x.name }));
+        renderOwnedLibs();
+      }catch(e){
+        els.libsOwned.innerHTML = '';
+        showMsg(els.listMsg,'err','Nu pot încărca bibliotecile: ' + e.message);
+      }
+    }
+
+    async function loadCollections(){
+      clearMsg(els.listMsg);
+      els.colsWrap.innerHTML = '<div class="hint">Se încarcă colecțiile…</div>';
+      try{
+        const data = await apiCall('collections.list', {});
+        collections = data.collections || [];
+        // optional: sort by name
+        collections.sort((a,b)=> String(a.name||'').localeCompare(String(b.name||''),'ro'));
+        renderCollections();
+      }catch(e){
+        els.colsWrap.innerHTML = '';
+        showMsg(els.listMsg,'err','Nu pot încărca colecțiile: ' + e.message + '. Verifică dacă backend-ul are implementate endpoints collections.*');
+      }
+    }
+
+    async function loadAll(){
+      await loadOwnedLibs();
+      await loadCollections();
+    }
+
+    // —— Actions (join/create)
+    els.btnJoin.addEventListener('click', async ()=>{
+      clearMsg(els.joinMsg);
+      const id = els.joinId.value.trim();
+      if(!id){ showMsg(els.joinMsg,'err','Introdu un Collection ID.'); return; }
+      try{
+        await apiCall('collections.join', { collectionId: id });
+        showMsg(els.joinMsg,'ok','Te-ai înscris în colecție.');
+        els.joinId.value = '';
+        await loadCollections();
+      }catch(e){
+        showMsg(els.joinMsg,'err','Eroare la înscriere: ' + e.message);
+      }
+    });
+
+    els.btnCreate.addEventListener('click', async ()=>{
+      clearMsg(els.createMsg);
+      const name = els.newName.value.trim();
+      const description = els.newDesc.value.trim();
+      if(!name){ showMsg(els.createMsg,'err','Introdu un nume pentru colecție.'); return; }
+      try{
+        // Endpoint opțional, poate răspunde forbidden/invalid_request.
+        await apiCall('admin.createCollection', { name, description });
+        showMsg(els.createMsg,'ok','Colecție creată.');
+        els.newName.value=''; els.newDesc.value='';
+        await loadCollections();
+      }catch(e){
+        showMsg(els.createMsg,'err','Nu s-a putut crea colecția: ' + e.message + ' (verifică suportul backend).');
+      }
+    });
+
+    els.refresh.addEventListener('click', loadAll);
+    els.selectAll.addEventListener('click', ()=>{
+      document.querySelectorAll('.libCb').forEach(cb => cb.checked = true);
+    });
+    els.clearSel.addEventListener('click', ()=>{
+      document.querySelectorAll('.libCb').forEach(cb => cb.checked = false);
+    });
+
+    // —— Init
+    (async function init(){
+      const c = cfg();
+      const ok = !!(c.url && c.secret);
+      setBadge(ok ? 'ok' : '', ok ? 'Config OK' : 'Config nevalidat');
+      if(!ok){
+        showMsg(els.listMsg,'err','Completează întâi Setările (Script URL + Secret).');
+        return;
+      }
+      await loadAll();
+    })();
+  </script>
+</body>
+</html>
