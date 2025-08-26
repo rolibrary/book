@@ -197,25 +197,47 @@
       els.test.disabled = false;
       showMsg('ok','Setările au fost salvate.');
     }
-    async function test(){
-      clearMsg();
-      const url = localStorage.getItem(LS_KEYS.url)||'';
-      const secret = localStorage.getItem(LS_KEYS.secret)||'';
-      if(!url || !secret){ showMsg('err','Config incomplet. Salvează mai întâi.'); return; }
-      els.status.value = 'Se testează…';
-      try{
-        const res = await fetch(url,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({token:secret,op:'app.info',params:{}})});
-        const data = await res.json();
-        if(!data || data.ok!==true) throw new Error(data && data.error || 'Eroare necunoscută');
-        els.status.value = `OK — backend v${data.data.version} @ ${new Date().toLocaleString()}`;
-        setBadge('ok','Conectat');
-        showMsg('ok','Conexiune reușită cu backend-ul.');
-      }catch(err){
-        els.status.value = 'Eroare';
-        setBadge('err','Eroare backend');
-        showMsg('err',`Test eșuat: ${err.message}`);
-      }
-    }
+async function test(){
+  clearMsg();
+  const url = localStorage.getItem(LS_KEYS.url)||'';
+  const secret = localStorage.getItem(LS_KEYS.secret)||'';
+  if(!url || !secret){ showMsg('err','Config incomplet. Salvează mai întâi.'); return; }
+  els.status.value = 'Se testează…';
+
+  // încercare 1: application/json
+  try{
+    const res = await fetch(url,{
+      method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({token:secret,op:'app.info',params:{}})
+    });
+    const data = await res.json();
+    if(!data || data.ok!==true) throw new Error(data && data.error || 'Eroare necunoscută');
+    els.status.value = `OK — backend v${data.data.version} @ ${new Date().toLocaleString()}`;
+    setBadge('ok','Conectat');
+    showMsg('ok','Conexiune reușită cu backend-ul.');
+    return;
+  }catch(_e){ /* continuăm cu fallback */ }
+
+  // încercare 2 (fallback CORS): text/plain (evită preflight)
+  try{
+    const res = await fetch(url,{
+      method:'POST',
+      headers:{'Content-Type':'text/plain'},
+      body: JSON.stringify({token:secret,op:'app.info',params:{}})
+    });
+    const data = await res.json();
+    if(!data || data.ok!==true) throw new Error(data && data.error || 'Eroare necunoscută');
+    els.status.value = `OK — backend v${data.data.version} @ ${new Date().toLocaleString()}`;
+    setBadge('ok','Conectat');
+    showMsg('ok','Conexiune reușită (fallback CORS).');
+  }catch(err){
+    els.status.value = 'Eroare';
+    setBadge('err','Eroare backend');
+    showMsg('err',`Test eșuat: ${err.message}. Verifică „Who has access = Anyone” și că URL-ul e cel cu /exec.`);
+  }
+}
+
     function exportSettings(){
       const obj = {
         _kind:'BPT_SETTINGS',
